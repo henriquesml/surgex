@@ -1,0 +1,25 @@
+{
+  "name": "dry",
+  "version": "0.1.0",
+  "description": "Deterministic code clone detector — finds componentization opportunities",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": { "dry": "dist/cli.js" },
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/cli.ts",
+    "index": "ts-node src/cli.ts index",
+    "report": "ts-node src/cli.ts report"
+  },
+  "dependencies": {
+    "glob": "^10.4.5",
+    "tree-sitter": "^0.21.1",
+    "tree-sitter-ruby": "^0.21.0",
+    "tree-sitter-typescript": "^0.21.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.0"
+  }
+}
