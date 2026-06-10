@@ -111,4 +111,49 @@ describe('indexPaths — incremental', () => {
 
     expect(second.map(u => ({ ...u, id: 0 }))).toEqual(first.map(u => ({ ...u, id: 0 })))
   })
+
+  it('writes verbose output to stderr for each file', async () => {
+    const lines: string[] = []
+    const write = process.stderr.write
+    process.stderr.write = (chunk: unknown) => {
+      lines.push(String(chunk))
+      return true
+    }
+    try {
+      await indexPaths([path.join(tmp, 'src')], makeStore(), { verbose: true })
+    } finally {
+      process.stderr.write = write
+    }
+    expect(lines.some(l => l.includes('parsed') || l.includes('cached'))).toBe(true)
+  })
+
+  it('labels reused files as cached in verbose mode', async () => {
+    await quiet(() => indexPaths([path.join(tmp, 'src')], makeStore()))
+
+    const lines: string[] = []
+    const write = process.stderr.write
+    process.stderr.write = (chunk: unknown) => {
+      lines.push(String(chunk))
+      return true
+    }
+    try {
+      await indexPaths([path.join(tmp, 'src')], makeStore(), { verbose: true })
+    } finally {
+      process.stderr.write = write
+    }
+    expect(lines.some(line => line.includes('(cached)'))).toBe(true)
+  })
+
+  it('skips a file that disappears between glob and stat (race condition)', async () => {
+    // Replace a.ts with an unreadable symlink to a non-existent target so
+    // statSync throws ENOENT when that file is processed.
+    fs.rmSync(path.join(tmp, 'src/a.ts'))
+    fs.symlinkSync('/nonexistent_surgex_target', path.join(tmp, 'src/a.ts'))
+    try {
+      const stats = await quiet(() => indexPaths([path.join(tmp, 'src')], makeStore()))
+      expect(stats.files).toBe(1) // only b.ts was indexed
+    } finally {
+      fs.rmSync(path.join(tmp, 'src/a.ts')) // remove the symlink so afterEach cleanup works
+    }
+  })
 })

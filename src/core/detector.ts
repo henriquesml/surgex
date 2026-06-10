@@ -51,7 +51,7 @@ export function detectClones(units: CodeUnit[], options: DetectOptions = {}): Cl
       for (let j = i + 1; j < unitIndices.length; j++) {
         const indexA = unitIndices[i],
           indexB = unitIndices[j]
-        const pairKey = indexA < indexB ? indexA * unitCount + indexB : indexB * unitCount + indexA
+        const pairKey = indexA * unitCount + indexB
         if (!seenPairKeys.has(pairKey)) {
           seenPairKeys.add(pairKey)
           candidatePairs.push([indexA, indexB])

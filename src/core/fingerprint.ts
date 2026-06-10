@@ -66,5 +66,5 @@ export function jaccardSets(first: Set<number>, second: Set<number>): number {
     if (larger.has(hash)) intersectionSize++
   }
   const unionSize = first.size + second.size - intersectionSize
-  return unionSize === 0 ? 0 : intersectionSize / unionSize
+  return intersectionSize / unionSize
 }

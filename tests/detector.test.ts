@@ -54,6 +54,34 @@ describe('detectClones', () => {
     ])
     expect(detectClones(units, { threshold: 1.0 })).toHaveLength(1)
   })
+
+  it('calls onProgress for each unique file and for candidate pairs', () => {
+    const units = unitsFrom([
+      [FN_A, 'a.ts'],
+      [FN_B, 'b.ts'],
+    ])
+    const fileEvents: string[] = []
+    const pairEvents: string[] = []
+    detectClones(units, {
+      threshold: 0.75,
+      onProgress: (_current, _total, label) => {
+        if (label === 'pairs') pairEvents.push(label)
+        else fileEvents.push(label)
+      },
+    })
+    expect(fileEvents).toContain('a.ts')
+    expect(fileEvents).toContain('b.ts')
+    expect(pairEvents.length).toBeGreaterThan(0)
+  })
+
+  it('skips hashes shared by too many units', () => {
+    const units = Array.from({ length: 51 }, (_, index) => ({
+      ...unitsFrom([[FN_A.replace('useProducts', `useProducts${index}`), `${index}.ts`]])[0],
+      id: index + 1,
+    }))
+
+    expect(detectClones(units, { threshold: 0.75 })).toEqual([])
+  })
 })
 
 describe('groupClones', () => {
@@ -67,5 +95,24 @@ describe('groupClones', () => {
     expect(groups).toHaveLength(1)
     expect(groups[0].units).toHaveLength(3)
     expect(groups[0].similarity).toBe(1)
+  })
+
+  it('sorts groups by descending similarity', () => {
+    // Three pairs: A≡B (similarity 1), C≈D (lower similarity due to differences)
+    const nearlyIdentical = FN_C.replace('totallyDifferent', 'almostIdentical').replace(
+      'let acc = 0',
+      'let acc = 1',
+    )
+    const units = unitsFrom([
+      [FN_A, 'a.ts'],
+      [FN_B, 'b.ts'],
+      [FN_C, 'c.ts'],
+      [nearlyIdentical, 'd.ts'],
+    ])
+    const groups = groupClones(detectClones(units, { threshold: 0.5 }))
+    expect(groups.length).toBeGreaterThanOrEqual(2)
+    for (let i = 1; i < groups.length; i++) {
+      expect(groups[i - 1].similarity).toBeGreaterThanOrEqual(groups[i].similarity)
+    }
   })
 })

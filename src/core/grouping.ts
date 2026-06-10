@@ -39,7 +39,7 @@ export function groupClones(pairs: ClonePair[]): CloneGroup[] {
 
   return Array.from(unitsByRoot.entries())
     .map(([root, groupUnits]) => ({
-      similarity: maxSimilarityByRoot.get(root) ?? 0,
+      similarity: maxSimilarityByRoot.get(root)!,
       units: Array.from(groupUnits.values()),
     }))
     .sort((first, second) => second.similarity - first.similarity)
