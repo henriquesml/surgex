@@ -69,9 +69,12 @@ Steps:
 
 The selected minimums form a set — the unit's fingerprint. Two units that share code share fingerprint hashes.
 
-Parameters used:
+Default parameters (tunable via `surgex index --kgram=N --window=N`):
 - `K = 5` (minimum match length in tokens)
 - `W = 4` (window size; controls fingerprint density)
+
+The parameters are stored in the index and reused by `check`, so fingerprints
+always match the index they are compared against.
 
 ### 4. Similarity — Jaccard coefficient
 
@@ -115,14 +118,16 @@ The matching is done with **Longest Common Subsequence (LCS)** on normalized lin
 
 The index is stored at `.surgex/index.json` relative to the directory where `surgex index` was run. It persists between runs — `surgex check` reads it without re-indexing.
 
-When `surgex` is invoked from a subdirectory, it walks up the directory tree to find the nearest `.surgex/` folder, similar to how `git` finds `.git/`.
+File paths are stored relative to the project root, so the index keeps working when the project is moved or checked out on another machine (e.g. CI).
+
+When `surgex` is invoked from a subdirectory, it walks up the directory tree to find the nearest `.surgex/` folder, similar to how `git` finds `.git/`. The walk stops at the git repository root.
 
 ---
 
 ## Installation
 
 ```bash
-git clone https://github.com/yourorg/surgex
+git clone https://github.com/henriquesml/surgex
 cd surgex
 npm install
 npm run build
@@ -132,7 +137,7 @@ npm link        # makes `surgex` available globally
 Or run directly without installing:
 
 ```bash
-npx ts-node /path/to/surgex/src/cli.ts <command>
+npx ts-node /path/to/surgex/src/cli/index.ts <command>
 ```
 
 ---
@@ -148,6 +153,7 @@ surgex index                          # index from current directory
 surgex index src/                     # index a specific path
 surgex index src/ lib/                # index multiple paths
 surgex index --verbose                # print each indexed file
+surgex index --kgram=7 --window=5     # tune Winnowing parameters
 ```
 
 Ignored automatically: `node_modules`, `dist`, `tmp`, `vendor`, `coverage`, `.git`, `spec/fixtures`.
@@ -177,6 +183,18 @@ Options:
 | `--threshold=N` | `0.75` | Minimum Jaccard similarity (0.0–1.0) |
 | `--min-tokens=N` | `20` | Ignore units with fewer normalized tokens |
 | `--show-code` | — | Show duplicated lines side by side |
+| `--json` | — | Machine-readable JSON output |
+| `--fail-on-found` | — | Exit with code 1 if clones are found (CI gate) |
+
+`check` also detects clones *within the checked files themselves* — two
+identical new files added in the same branch are reported even though neither
+is in the index yet.
+
+Using as a CI gate:
+
+```bash
+surgex check --from=origin/main --fail-on-found --json > clones.json
+```
 
 Both commands show progress in real time:
 
@@ -252,21 +270,36 @@ With `--show-code`:
 
 ## Project structure
 
+The code is organized in layers; the dependency direction points inward, so
+`core/` never imports from the outer layers.
+
 ```
 src/
-  types.ts          — CodeUnit, ClonePair, CloneGroup interfaces
-  normalizer.ts     — AST node → normalized token sequence
-  fingerprinter.ts  — Winnowing algorithm + FNV-1a hash + Jaccard
-  parser.ts         — tree-sitter: extracts code units from TS and Ruby
-  store.ts          — JSON index persistence (.surgex/index.json)
-  detector.ts       — hash bucket filtering + Jaccard computation
-  reporter.ts       — Union-Find grouping + report formatting
-  indexer.ts        — glob + parse + save pipeline
-  checker.ts        — git-aware diff check + per-file insertion/modification split
-  git.ts            — git changed files, file-at-ref content
-  diff.ts           — LCS-based side-by-side visual diff
-  format.ts         — unified output formatter (shared by check and report paths)
-  cli.ts            — index / check commands
+  core/                 — pure algorithms, no I/O (deterministic in → out)
+    normalizer.ts       — AST node → normalized token sequence
+    fingerprint.ts      — Winnowing algorithm + FNV-1a hash + Jaccard
+    detector.ts         — hash bucket filtering + Jaccard computation
+    grouping.ts         — Union-Find clustering of clone pairs
+  lang/
+    parser.ts           — tree-sitter: extracts code units from TS and Ruby
+  io/                   — the boundary with the outside world
+    store.ts            — JSON index persistence (.surgex/index.json)
+    git.ts              — git changed files, file-at-ref content
+    source.ts           — reading source line ranges
+  pipeline/             — orchestration (core + lang + io)
+    indexer.ts          — glob + parse + save pipeline
+    checker.ts          — git-aware diff check + insertion/modification split
+  report/               — presentation
+    format.ts           — unified output formatter
+    report.ts           — builds display groups for check and report paths
+    diff.ts             — LCS-based side-by-side visual diff
+  cli/
+    index.ts            — index / check command dispatch
+    help.ts             — usage text
+  types.ts              — CodeUnit, ClonePair, CloneGroup interfaces
+  errors.ts             — UsageError (expected, user-facing errors)
+  index.ts              — public library API
+tests/                  — vitest suite (core, parser, store, checker, CLI smoke)
 ```
 
 ---

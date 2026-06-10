@@ -1,6 +1,5 @@
 node_modules/
 dist/
-*.js
-*.d.ts
-*.js.map
-.dry/
+*.tsbuildinfo
+.surgex/
+.DS_Store

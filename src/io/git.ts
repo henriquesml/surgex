@@ -1,0 +1,96 @@
+import { execFileSync } from 'child_process'
+import * as path from 'path'
+import { UsageError } from '../errors'
+
+export interface ChangedFile {
+  absolutePath: string
+  repoRelativePath: string
+}
+
+export interface GitContext {
+  repoRoot: string
+  changedFiles: ChangedFile[]
+}
+
+// All git invocations go through execFileSync with an argument array: nothing
+// is ever interpolated into a shell string, so file names and refs containing
+// shell metacharacters (`$(...)`, backticks, spaces) are passed through safely.
+function git(args: string[], cwd: string): string {
+  return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+}
+
+function isGitRepo(dir: string): boolean {
+  try {
+    git(['rev-parse', '--git-dir'], dir)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function repoRoot(cwd: string): string {
+  return git(['rev-parse', '--show-toplevel'], cwd)
+}
+
+function listChanged(root: string, extraArgs: string[]): ChangedFile[] {
+  const out = git(['diff', '--name-only', '--diff-filter=ACM', ...extraArgs], root)
+  return out
+    .split('\n')
+    .filter(Boolean)
+    .map(rel => ({
+      absolutePath: path.join(root, rel),
+      repoRelativePath: rel,
+    }))
+}
+
+function listUntracked(root: string): ChangedFile[] {
+  const out = git(['ls-files', '--others', '--exclude-standard'], root)
+  return out
+    .split('\n')
+    .filter(Boolean)
+    .map(rel => ({
+      absolutePath: path.join(root, rel),
+      repoRelativePath: rel,
+    }))
+}
+
+export function getChangedFiles(cwd: string, from?: string): GitContext {
+  if (!isGitRepo(cwd)) throw new UsageError(`Not a git repository: ${cwd}`)
+
+  const root = repoRoot(cwd)
+
+  const changed = from
+    ? listChanged(root, [`${from}...HEAD`])
+    : [...listChanged(root, ['--cached']), ...listChanged(root, []), ...listUntracked(root)]
+
+  const seen = new Set<string>()
+  const changedFiles = changed.filter(f => {
+    if (seen.has(f.absolutePath)) return false
+    seen.add(f.absolutePath)
+    return true
+  })
+
+  return { repoRoot: root, changedFiles }
+}
+
+// Returns the content of a file at a given git ref, or null if it didn't exist
+export function fileAtRef(repoRoot: string, repoRelativePath: string, ref: string): string | null {
+  try {
+    return execFileSync('git', ['show', `${ref}:${repoRelativePath}`], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'], // suppress stderr
+    })
+  } catch {
+    return null
+  }
+}
+
+// Finds the git repository root containing `dir`, or null if not in a repo.
+export function findRepoRoot(dir: string): string | null {
+  try {
+    return repoRoot(dir)
+  } catch {
+    return null
+  }
+}

@@ -2,8 +2,12 @@
 // Guarantees: any shared substring of length >= K is detected.
 // Avoids noise by only selecting one hash per sliding window of size W.
 
-const K = 5  // k-gram size: minimum match length in tokens
-const W = 4  // window size: controls density of selected hashes
+export interface FingerprintParams {
+  k: number // k-gram size: minimum match length in tokens
+  w: number // window size: controls density of selected hashes
+}
+
+export const DEFAULT_PARAMS: FingerprintParams = { k: 5, w: 4 }
 
 function kgrams(tokens: string[], k: number): string[] {
   const result: string[] = []
@@ -35,21 +39,31 @@ function winnow(hashes: number[], w: number): Set<number> {
   return selected
 }
 
-export function fingerprint(tokens: string[]): number[] {
-  if (tokens.length < K) return tokens.map(fnv1a)
-  const grams = kgrams(tokens, K)
+export function fingerprint(
+  tokens: string[],
+  params: FingerprintParams = DEFAULT_PARAMS,
+): number[] {
+  const { k, w } = params
+  if (tokens.length < k) return tokens.map(fnv1a)
+  const grams = kgrams(tokens, k)
   const hashes = grams.map(fnv1a)
-  if (hashes.length < W) return hashes
-  return Array.from(winnow(hashes, W))
+  if (hashes.length < w) return hashes
+  return Array.from(winnow(hashes, w))
 }
 
 export function jaccard(a: number[], b: number[]): number {
-  if (a.length === 0 && b.length === 0) return 0
-  const setA = new Set(a)
-  const setB = new Set(b)
+  return jaccardSets(new Set(a), new Set(b))
+}
+
+// Set-based variant: callers comparing many pairs should build each unit's
+// Set once and reuse it, instead of paying two Set allocations per pair.
+export function jaccardSets(setA: Set<number>, setB: Set<number>): number {
+  if (setA.size === 0 && setB.size === 0) return 0
+  // iterate the smaller set
+  const [small, large] = setA.size <= setB.size ? [setA, setB] : [setB, setA]
   let intersection = 0
-  for (const h of setA) {
-    if (setB.has(h)) intersection++
+  for (const h of small) {
+    if (large.has(h)) intersection++
   }
   const union = setA.size + setB.size - intersection
   return union === 0 ? 0 : intersection / union

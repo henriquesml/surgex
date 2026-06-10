@@ -1,5 +1,5 @@
 import { showDuplicatedLines } from './diff'
-import type { CodeUnit } from './types'
+import type { CodeUnit } from '../types'
 
 export type UnitRole = 'new' | 'changed' | 'existing' | undefined
 
@@ -49,7 +49,8 @@ export function formatGroups(groups: DisplayGroup[], options: FormatOptions = {}
 
   const allFiles = groups.flatMap(g => g.units.map(u => u.unit.file))
   const root = repoRoot ?? commonDirPrefix(allFiles)
-  const rel = (f: string) => root && f.startsWith(root) ? f.slice(root.length) : f
+  const rel = (f: string) =>
+    root && f.startsWith(root) ? f.slice(root.length).replace(/^\//, '') : f
 
   // bucket groups by clone type, preserving similarity order within each bucket
   const buckets = new Map<string, DisplayGroup[]>()
@@ -71,7 +72,9 @@ export function formatGroups(groups: DisplayGroup[], options: FormatOptions = {}
   for (const type of orderedTypes) {
     const bucket = buckets.get(type)!
 
-    lines.push(`── ${type}  ${cloneTypeLabel(type)}  (${bucket.length} item${bucket.length > 1 ? 's' : ''})`)
+    lines.push(
+      `── ${type}  ${cloneTypeLabel(type)}  (${bucket.length} item${bucket.length > 1 ? 's' : ''})`,
+    )
     lines.push('')
 
     for (const { similarity, description, units } of bucket) {
@@ -82,7 +85,9 @@ export function formatGroups(groups: DisplayGroup[], options: FormatOptions = {}
 
       for (const { unit, role } of units) {
         const roleTag = role ? `[${role}]`.padEnd(10) : '          '
-        lines.push(`        ${roleTag} ${unit.name.padEnd(42)} [${unit.type}]  ${rel(unit.file)}:${unit.startLine}`)
+        lines.push(
+          `        ${roleTag} ${unit.name.padEnd(42)} [${unit.type}]  ${rel(unit.file)}:${unit.startLine}`,
+        )
       }
 
       if (showCode && units.length >= 2) {
@@ -91,23 +96,31 @@ export function formatGroups(groups: DisplayGroup[], options: FormatOptions = {}
         const labelA = `${a.name}${units[0].role ? ` (${units[0].role})` : ''}`
         const labelB = `${b.name}${units[units.length - 1].role ? ` (${units[units.length - 1].role})` : ''}`
         lines.push('')
-        lines.push(showDuplicatedLines(
-          labelA, a.file, a.startLine, a.endLine,
-          labelB, b.file, b.startLine, b.endLine,
-        ))
+        lines.push(
+          showDuplicatedLines(
+            labelA,
+            a.file,
+            a.startLine,
+            a.endLine,
+            labelB,
+            b.file,
+            b.startLine,
+            b.endLine,
+          ),
+        )
       } else {
         lines.push('')
       }
     }
   }
 
-
   return lines.join('\n')
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
-function commonDirPrefix(files: string[]): string {
+// Longest common leading directory path shared by all files.
+export function commonDirPrefix(files: string[]): string {
   if (files.length === 0) return ''
   const dirs = files.map(f => f.split('/').slice(0, -1))
   let prefix = dirs[0]
