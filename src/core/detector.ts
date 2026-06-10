@@ -3,7 +3,7 @@ import type { ClonePair, CodeUnit } from '../types'
 
 // Hashes shared by more than this many units are structural noise (like stop words).
 // Skipping them avoids O(N²) explosion on patterns like `const { ID } = ID()`.
-const MAX_BUCKET = 50
+const MAX_UNITS_PER_HASH = 50
 
 export interface DetectOptions {
   threshold?: number
@@ -17,44 +17,44 @@ export function detectClones(units: CodeUnit[], options: DetectOptions = {}): Cl
 
   // Each unit's fingerprint as a Set, built once — jaccard is computed for
   // many pairs and would otherwise re-allocate two Sets per comparison.
-  const fingerprintSets = units.map(u => new Set(u.fingerprint))
+  const fingerprintSets = units.map(unit => new Set(unit.fingerprint))
 
   // Phase 1: build hash → unit-index map, reporting per-file progress
-  const hashToIndices = new Map<number, number[]>()
-  const files = [...new Set(units.map(u => u.file))]
+  const unitIndicesByHash = new Map<number, number[]>()
+  const files = [...new Set(units.map(unit => unit.file))]
   const reportedFiles = new Set<string>()
 
-  for (let i = 0; i < units.length; i++) {
-    const u = units[i]
-    if (onProgress && !reportedFiles.has(u.file)) {
-      reportedFiles.add(u.file)
-      onProgress(reportedFiles.size, files.length, u.file)
+  for (let unitIndex = 0; unitIndex < units.length; unitIndex++) {
+    const unit = units[unitIndex]
+    if (onProgress && !reportedFiles.has(unit.file)) {
+      reportedFiles.add(unit.file)
+      onProgress(reportedFiles.size, files.length, unit.file)
     }
-    for (const h of u.fingerprint) {
-      let bucket = hashToIndices.get(h)
-      if (!bucket) {
-        bucket = []
-        hashToIndices.set(h, bucket)
+    for (const hash of unit.fingerprint) {
+      let unitIndices = unitIndicesByHash.get(hash)
+      if (!unitIndices) {
+        unitIndices = []
+        unitIndicesByHash.set(hash, unitIndices)
       }
-      bucket.push(i)
+      unitIndices.push(unitIndex)
     }
   }
 
-  // Phase 2: collect candidate pairs (skip buckets that are too common to be meaningful)
-  const seen = new Set<number>()
-  const candidates: Array<[number, number]> = []
-  const n = units.length
+  // Phase 2: collect candidate pairs (skip hashes shared by too many units to be meaningful)
+  const seenPairKeys = new Set<number>()
+  const candidatePairs: Array<[number, number]> = []
+  const unitCount = units.length
 
-  for (const indices of hashToIndices.values()) {
-    if (indices.length > MAX_BUCKET) continue
-    for (let i = 0; i < indices.length; i++) {
-      for (let j = i + 1; j < indices.length; j++) {
-        const a = indices[i],
-          b = indices[j]
-        const key = a < b ? a * n + b : b * n + a
-        if (!seen.has(key)) {
-          seen.add(key)
-          candidates.push([a, b])
+  for (const unitIndices of unitIndicesByHash.values()) {
+    if (unitIndices.length > MAX_UNITS_PER_HASH) continue
+    for (let i = 0; i < unitIndices.length; i++) {
+      for (let j = i + 1; j < unitIndices.length; j++) {
+        const indexA = unitIndices[i],
+          indexB = unitIndices[j]
+        const pairKey = indexA < indexB ? indexA * unitCount + indexB : indexB * unitCount + indexA
+        if (!seenPairKeys.has(pairKey)) {
+          seenPairKeys.add(pairKey)
+          candidatePairs.push([indexA, indexB])
         }
       }
     }
@@ -63,16 +63,16 @@ export function detectClones(units: CodeUnit[], options: DetectOptions = {}): Cl
   // Phase 3: compute Jaccard for each candidate pair, reporting progress every 500
   const clones: ClonePair[] = []
 
-  for (let i = 0; i < candidates.length; i++) {
-    if (onProgress && i % 500 === 0) {
-      onProgress(i, candidates.length, 'pairs')
+  for (let pairIndex = 0; pairIndex < candidatePairs.length; pairIndex++) {
+    if (onProgress && pairIndex % 500 === 0) {
+      onProgress(pairIndex, candidatePairs.length, 'pairs')
     }
-    const [ai, bi] = candidates[i]
-    const sim = jaccardSets(fingerprintSets[ai], fingerprintSets[bi])
-    if (sim >= threshold) {
-      clones.push({ unitA: units[ai], unitB: units[bi], similarity: sim })
+    const [indexA, indexB] = candidatePairs[pairIndex]
+    const similarity = jaccardSets(fingerprintSets[indexA], fingerprintSets[indexB])
+    if (similarity >= threshold) {
+      clones.push({ unitA: units[indexA], unitB: units[indexB], similarity })
     }
   }
 
-  return clones.sort((a, b) => b.similarity - a.similarity)
+  return clones.sort((first, second) => second.similarity - first.similarity)
 }

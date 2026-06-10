@@ -22,26 +22,31 @@ function normalizeLine(line: string): string {
 const MAX_LCS_CELLS = 1_000_000
 
 // LCS on normalized lines to find matching pairs
-function lcsLines(a: string[], b: string[]): Array<[number, number]> {
-  const m = a.length,
-    n = b.length
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0))
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1])
+function lcsLines(linesA: string[], linesB: string[]): Array<[number, number]> {
+  const lengthA = linesA.length,
+    lengthB = linesB.length
+  const lcsTable: number[][] = Array.from({ length: lengthA + 1 }, () =>
+    new Array(lengthB + 1).fill(0),
+  )
+  for (let rowA = 1; rowA <= lengthA; rowA++)
+    for (let rowB = 1; rowB <= lengthB; rowB++)
+      lcsTable[rowA][rowB] =
+        linesA[rowA - 1] === linesB[rowB - 1]
+          ? lcsTable[rowA - 1][rowB - 1] + 1
+          : Math.max(lcsTable[rowA - 1][rowB], lcsTable[rowA][rowB - 1])
 
-  const pairs: Array<[number, number]> = []
-  let i = m,
-    j = n
-  while (i > 0 && j > 0) {
-    if (a[i - 1] === b[j - 1]) {
-      pairs.unshift([i - 1, j - 1])
-      i--
-      j--
-    } else if (dp[i - 1][j] >= dp[i][j - 1]) i--
-    else j--
+  const matchedPairs: Array<[number, number]> = []
+  let rowA = lengthA,
+    rowB = lengthB
+  while (rowA > 0 && rowB > 0) {
+    if (linesA[rowA - 1] === linesB[rowB - 1]) {
+      matchedPairs.unshift([rowA - 1, rowB - 1])
+      rowA--
+      rowB--
+    } else if (lcsTable[rowA - 1][rowB] >= lcsTable[rowA][rowB - 1]) rowA--
+    else rowB--
   }
-  return pairs
+  return matchedPairs
 }
 
 export function showDuplicatedLines(
@@ -64,44 +69,52 @@ export function showDuplicatedLines(
     return `${indent}(units too large to diff — ${linesA.length} × ${linesB.length} lines)\n`
   }
 
-  const normA = linesA.map(normalizeLine)
-  const normB = linesB.map(normalizeLine)
+  const normalizedA = linesA.map(normalizeLine)
+  const normalizedB = linesB.map(normalizeLine)
 
-  const matchedA = new Set<number>()
-  const matchedB = new Set<number>()
+  const matchedRowsA = new Set<number>()
+  const matchedRowsB = new Set<number>()
 
-  for (const [ia, ib] of lcsLines(normA, normB)) {
-    if (normA[ia].length > 2) {
+  for (const [rowA, rowB] of lcsLines(normalizedA, normalizedB)) {
+    if (normalizedA[rowA].length > 2) {
       // ignore trivial lines like '{' or '}'
-      matchedA.add(ia)
-      matchedB.add(ib)
+      matchedRowsA.add(rowA)
+      matchedRowsB.add(rowB)
     }
   }
 
-  const dupCount = matchedA.size
-  const totalA = linesA.filter(l => l.trim().length > 2).length
-  const pct = totalA > 0 ? Math.round((dupCount / totalA) * 100) : 0
+  const duplicatedCount = matchedRowsA.size
+  const significantCount = linesA.filter(line => line.trim().length > 2).length
+  const duplicatedPercent =
+    significantCount > 0 ? Math.round((duplicatedCount / significantCount) * 100) : 0
 
   const lines: string[] = []
-  const col = (c: string, s: string) => (process.stdout.isTTY ? c + s + RESET : s)
-  const maxW = Math.max(...linesA.map(l => l.length), labelA.length) + 2
+  const colorize = (color: string, text: string) =>
+    process.stdout.isTTY ? color + text + RESET : text
+  const columnWidth = Math.max(...linesA.map(line => line.length), labelA.length) + 2
 
   // Header
-  lines.push(indent + col(CYAN, labelA.padEnd(maxW)) + '  ' + col(CYAN, labelB))
-  lines.push(indent + col(DIM, '─'.repeat(maxW) + '──' + '─'.repeat(labelB.length)))
+  lines.push(indent + colorize(CYAN, labelA.padEnd(columnWidth)) + '  ' + colorize(CYAN, labelB))
+  lines.push(indent + colorize(DIM, '─'.repeat(columnWidth) + '──' + '─'.repeat(labelB.length)))
 
   // Side-by-side with match markers
-  const maxRows = Math.max(linesA.length, linesB.length)
-  for (let i = 0; i < maxRows; i++) {
-    const lineA = linesA[i] ?? ''
-    const lineB = linesB[i] ?? ''
-    const isDup = matchedA.has(i) || matchedB.has(i)
-    const marker = isDup ? col(YELLOW, ' ≡ ') : col(DIM, '   ')
-    lines.push(indent + col(DIM, lineA.padEnd(maxW)) + marker + col(DIM, lineB))
+  const rowCount = Math.max(linesA.length, linesB.length)
+  for (let row = 0; row < rowCount; row++) {
+    const lineA = linesA[row] ?? ''
+    const lineB = linesB[row] ?? ''
+    const isDuplicated = matchedRowsA.has(row) || matchedRowsB.has(row)
+    const marker = isDuplicated ? colorize(YELLOW, ' ≡ ') : colorize(DIM, '   ')
+    lines.push(indent + colorize(DIM, lineA.padEnd(columnWidth)) + marker + colorize(DIM, lineB))
   }
 
-  lines.push(indent + col(DIM, '─'.repeat(maxW) + '──' + '─'.repeat(labelB.length)))
-  lines.push(indent + col(BOLD, `${dupCount} of ${totalA} lines structurally duplicated (${pct}%)`))
+  lines.push(indent + colorize(DIM, '─'.repeat(columnWidth) + '──' + '─'.repeat(labelB.length)))
+  lines.push(
+    indent +
+      colorize(
+        BOLD,
+        `${duplicatedCount} of ${significantCount} lines structurally duplicated (${duplicatedPercent}%)`,
+      ),
+  )
 
   return lines.join('\n') + '\n'
 }

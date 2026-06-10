@@ -33,24 +33,24 @@ function repoRoot(cwd: string): string {
 }
 
 function listChanged(root: string, extraArgs: string[]): ChangedFile[] {
-  const out = git(['diff', '--name-only', '--diff-filter=ACM', ...extraArgs], root)
-  return out
+  const output = git(['diff', '--name-only', '--diff-filter=ACM', ...extraArgs], root)
+  return output
     .split('\n')
     .filter(Boolean)
-    .map(rel => ({
-      absolutePath: path.join(root, rel),
-      repoRelativePath: rel,
+    .map(relativePath => ({
+      absolutePath: path.join(root, relativePath),
+      repoRelativePath: relativePath,
     }))
 }
 
 function listUntracked(root: string): ChangedFile[] {
-  const out = git(['ls-files', '--others', '--exclude-standard'], root)
-  return out
+  const output = git(['ls-files', '--others', '--exclude-standard'], root)
+  return output
     .split('\n')
     .filter(Boolean)
-    .map(rel => ({
-      absolutePath: path.join(root, rel),
-      repoRelativePath: rel,
+    .map(relativePath => ({
+      absolutePath: path.join(root, relativePath),
+      repoRelativePath: relativePath,
     }))
 }
 
@@ -63,10 +63,10 @@ export function getChangedFiles(cwd: string, from?: string): GitContext {
     ? listChanged(root, [`${from}...HEAD`])
     : [...listChanged(root, ['--cached']), ...listChanged(root, []), ...listUntracked(root)]
 
-  const seen = new Set<string>()
-  const changedFiles = changed.filter(f => {
-    if (seen.has(f.absolutePath)) return false
-    seen.add(f.absolutePath)
+  const seenPaths = new Set<string>()
+  const changedFiles = changed.filter(file => {
+    if (seenPaths.has(file.absolutePath)) return false
+    seenPaths.add(file.absolutePath)
     return true
   })
 

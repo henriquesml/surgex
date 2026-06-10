@@ -56,14 +56,14 @@ export class Store {
   // working in is almost certainly someone else's). Falls back to
   // `<cwd>/.surgex` when none exists yet.
   static discover(cwd: string = process.cwd()): Store {
-    let dir = cwd
+    let currentDir = cwd
     while (true) {
-      const candidate = path.join(dir, '.surgex')
+      const candidate = path.join(currentDir, '.surgex')
       if (fs.existsSync(candidate)) return new Store(candidate)
-      if (fs.existsSync(path.join(dir, '.git'))) break // repo root reached
-      const parent = path.dirname(dir)
-      if (parent === dir) break // reached filesystem root
-      dir = parent
+      if (fs.existsSync(path.join(currentDir, '.git'))) break // repo root reached
+      const parentDir = path.dirname(currentDir)
+      if (parentDir === currentDir) break // reached filesystem root
+      currentDir = parentDir
     }
     return new Store(path.join(cwd, '.surgex'))
   }
@@ -112,10 +112,10 @@ export class Store {
     fileMeta?: Map<string, FileMeta>,
   ): void {
     let nextId = 1
-    const stored: StoredUnit[] = units.map(u => ({
-      ...u,
+    const stored: StoredUnit[] = units.map(unit => ({
+      ...unit,
       id: nextId++,
-      file: this.relativize(u.file),
+      file: this.relativize(unit.file),
     }))
     const files: Record<string, FileMeta> = {}
     if (fileMeta) {
@@ -135,20 +135,20 @@ export class Store {
 
     const unitsByFile = new Map<string, CodeUnit[]>()
     for (const stored of data.units) {
-      const abs = this.absolutize(stored.file)
-      let list = unitsByFile.get(abs)
-      if (!list) {
-        list = []
-        unitsByFile.set(abs, list)
+      const absolutePath = this.absolutize(stored.file)
+      let fileUnits = unitsByFile.get(absolutePath)
+      if (!fileUnits) {
+        fileUnits = []
+        unitsByFile.set(absolutePath, fileUnits)
       }
       // stale ids are harmless: replaceAll always reassigns them
-      list.push({ ...stored, file: abs })
+      fileUnits.push({ ...stored, file: absolutePath })
     }
 
     const cache = new Map<string, FileCacheEntry>()
-    for (const [rel, meta] of Object.entries(data.files)) {
-      const abs = this.absolutize(rel)
-      cache.set(abs, { meta, units: unitsByFile.get(abs) ?? [] })
+    for (const [relativePath, meta] of Object.entries(data.files)) {
+      const absolutePath = this.absolutize(relativePath)
+      cache.set(absolutePath, { meta, units: unitsByFile.get(absolutePath) ?? [] })
     }
     return cache
   }
@@ -160,7 +160,7 @@ export class Store {
   }
 
   getAll(): StoredUnit[] {
-    return this.read().units.map(u => ({ ...u, file: this.absolutize(u.file) }))
+    return this.read().units.map(unit => ({ ...unit, file: this.absolutize(unit.file) }))
   }
 
   count(): number {
@@ -189,29 +189,29 @@ function validateIndex(raw: unknown, indexPath: string): IndexData {
   if (typeof data.files !== 'object' || data.files === null || Array.isArray(data.files)) {
     fail('files is not an object')
   }
-  for (const meta of Object.values(data.files as Record<string, unknown>)) {
-    const m = meta as Record<string, unknown>
+  for (const rawMeta of Object.values(data.files as Record<string, unknown>)) {
+    const meta = rawMeta as Record<string, unknown>
     if (
-      typeof m !== 'object' ||
-      m === null ||
-      typeof m.mtimeMs !== 'number' ||
-      typeof m.size !== 'number'
+      typeof meta !== 'object' ||
+      meta === null ||
+      typeof meta.mtimeMs !== 'number' ||
+      typeof meta.size !== 'number'
     ) {
       fail('malformed file entry')
     }
   }
 
   if (!Array.isArray(data.units)) fail('units is not an array')
-  for (const u of data.units as Array<Record<string, unknown>>) {
+  for (const unit of data.units as Array<Record<string, unknown>>) {
     if (
-      typeof u !== 'object' ||
-      u === null ||
-      typeof u.file !== 'string' ||
-      typeof u.name !== 'string' ||
-      typeof u.startLine !== 'number' ||
-      typeof u.endLine !== 'number' ||
-      typeof u.tokenCount !== 'number' ||
-      !Array.isArray(u.fingerprint)
+      typeof unit !== 'object' ||
+      unit === null ||
+      typeof unit.file !== 'string' ||
+      typeof unit.name !== 'string' ||
+      typeof unit.startLine !== 'number' ||
+      typeof unit.endLine !== 'number' ||
+      typeof unit.tokenCount !== 'number' ||
+      !Array.isArray(unit.fingerprint)
     ) {
       fail('malformed unit entry')
     }

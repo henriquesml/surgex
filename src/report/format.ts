@@ -47,30 +47,30 @@ export function formatGroups(groups: DisplayGroup[], options: FormatOptions = {}
 
   const { showCode = false, repoRoot } = options
 
-  const allFiles = groups.flatMap(g => g.units.map(u => u.unit.file))
+  const allFiles = groups.flatMap(group => group.units.map(displayUnit => displayUnit.unit.file))
   const root = repoRoot ?? commonDirPrefix(allFiles)
-  const rel = (f: string) =>
-    root && f.startsWith(root) ? f.slice(root.length).replace(/^\//, '') : f
+  const relativize = (file: string) =>
+    root && file.startsWith(root) ? file.slice(root.length).replace(/^\//, '') : file
 
   // bucket groups by clone type, preserving similarity order within each bucket
-  const buckets = new Map<string, DisplayGroup[]>()
-  for (const g of groups) {
-    const b = buckets.get(g.cloneType) ?? []
-    b.push(g)
-    buckets.set(g.cloneType, b)
+  const groupsByType = new Map<string, DisplayGroup[]>()
+  for (const group of groups) {
+    const bucket = groupsByType.get(group.cloneType) ?? []
+    bucket.push(group)
+    groupsByType.set(group.cloneType, bucket)
   }
 
   const lines: string[] = [`Found ${groups.length} item(s):\n`]
 
   const orderedTypes = [
-    ...TYPE_ORDER.filter(t => buckets.has(t)),
-    ...[...buckets.keys()].filter(t => !TYPE_ORDER.includes(t)),
+    ...TYPE_ORDER.filter(type => groupsByType.has(type)),
+    ...[...groupsByType.keys()].filter(type => !TYPE_ORDER.includes(type)),
   ]
 
   let counter = 0
 
   for (const type of orderedTypes) {
-    const bucket = buckets.get(type)!
+    const bucket = groupsByType.get(type)!
 
     lines.push(
       `── ${type}  ${cloneTypeLabel(type)}  (${bucket.length} item${bucket.length > 1 ? 's' : ''})`,
@@ -86,26 +86,26 @@ export function formatGroups(groups: DisplayGroup[], options: FormatOptions = {}
       for (const { unit, role } of units) {
         const roleTag = role ? `[${role}]`.padEnd(10) : '          '
         lines.push(
-          `        ${roleTag} ${unit.name.padEnd(42)} [${unit.type}]  ${rel(unit.file)}:${unit.startLine}`,
+          `        ${roleTag} ${unit.name.padEnd(42)} [${unit.type}]  ${relativize(unit.file)}:${unit.startLine}`,
         )
       }
 
       if (showCode && units.length >= 2) {
-        const a = units[0].unit
-        const b = units[units.length - 1].unit
-        const labelA = `${a.name}${units[0].role ? ` (${units[0].role})` : ''}`
-        const labelB = `${b.name}${units[units.length - 1].role ? ` (${units[units.length - 1].role})` : ''}`
+        const firstUnit = units[0].unit
+        const lastUnit = units[units.length - 1].unit
+        const firstLabel = `${firstUnit.name}${units[0].role ? ` (${units[0].role})` : ''}`
+        const lastLabel = `${lastUnit.name}${units[units.length - 1].role ? ` (${units[units.length - 1].role})` : ''}`
         lines.push('')
         lines.push(
           showDuplicatedLines(
-            labelA,
-            a.file,
-            a.startLine,
-            a.endLine,
-            labelB,
-            b.file,
-            b.startLine,
-            b.endLine,
+            firstLabel,
+            firstUnit.file,
+            firstUnit.startLine,
+            firstUnit.endLine,
+            lastLabel,
+            lastUnit.file,
+            lastUnit.startLine,
+            lastUnit.endLine,
           ),
         )
       } else {
@@ -122,12 +122,17 @@ export function formatGroups(groups: DisplayGroup[], options: FormatOptions = {}
 // Longest common leading directory path shared by all files.
 export function commonDirPrefix(files: string[]): string {
   if (files.length === 0) return ''
-  const dirs = files.map(f => f.split('/').slice(0, -1))
-  let prefix = dirs[0]
-  for (const dir of dirs.slice(1)) {
-    let i = 0
-    while (i < prefix.length && i < dir.length && prefix[i] === dir[i]) i++
-    prefix = prefix.slice(0, i)
+  const dirSegments = files.map(file => file.split('/').slice(0, -1))
+  let prefix = dirSegments[0]
+  for (const segments of dirSegments.slice(1)) {
+    let matchLength = 0
+    while (
+      matchLength < prefix.length &&
+      matchLength < segments.length &&
+      prefix[matchLength] === segments[matchLength]
+    )
+      matchLength++
+    prefix = prefix.slice(0, matchLength)
   }
   return prefix.length ? prefix.join('/') + '/' : ''
 }

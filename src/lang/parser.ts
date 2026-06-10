@@ -67,22 +67,23 @@ function extractTypeScriptUnits(root: SyntaxNode): RawUnit[] {
       }
       case 'variable_declarator': {
         const name = node.childForFieldName('name')
-        const fn = unwrapFunction(node.childForFieldName('value'))
-        if (name && fn) units.push({ name: name.text, type: 'arrow', node: fn })
+        const functionNode = unwrapFunction(node.childForFieldName('value'))
+        if (name && functionNode) units.push({ name: name.text, type: 'arrow', node: functionNode })
         break
       }
       // Class property arrows: `handleClick = () => {...}`
       case 'public_field_definition': {
         const name = node.childForFieldName('name')
-        const fn = unwrapFunction(node.childForFieldName('value'))
-        if (name && fn) units.push({ name: name.text, type: 'method', node: fn })
+        const functionNode = unwrapFunction(node.childForFieldName('value'))
+        if (name && functionNode)
+          units.push({ name: name.text, type: 'method', node: functionNode })
         break
       }
       // Object literal entries: `{ fetchAll: () => {...} }`
       case 'pair': {
         const key = node.childForFieldName('key')
-        const fn = unwrapFunction(node.childForFieldName('value'))
-        if (key && fn) units.push({ name: key.text, type: 'arrow', node: fn })
+        const functionNode = unwrapFunction(node.childForFieldName('value'))
+        if (key && functionNode) units.push({ name: key.text, type: 'arrow', node: functionNode })
         break
       }
       // `export default () => {}` / `export default function () {}` (function
@@ -129,21 +130,21 @@ export function parseSource(
   filePath: string,
   params: FingerprintParams = DEFAULT_PARAMS,
 ): CodeUnit[] {
-  const ext = filePath.split('.').pop()?.toLowerCase()
+  const extension = filePath.split('.').pop()?.toLowerCase()
   let tree: ReturnType<Parser['parse']>
   let language: Language
   let rawUnits: RawUnit[]
 
   try {
-    if (ext === 'tsx') {
+    if (extension === 'tsx') {
       tree = tsxParser.parse(source)
       language = 'typescript'
       rawUnits = extractTypeScriptUnits(tree.rootNode)
-    } else if (ext === 'ts') {
+    } else if (extension === 'ts') {
       tree = tsParser.parse(source)
       language = 'typescript'
       rawUnits = extractTypeScriptUnits(tree.rootNode)
-    } else if (ext === 'rb') {
+    } else if (extension === 'rb') {
       tree = rubyParser.parse(source)
       language = 'ruby'
       rawUnits = extractRubyUnits(tree.rootNode)
@@ -156,7 +157,6 @@ export function parseSource(
 
   const units = rawUnits.map(({ name, type, node }) => {
     const tokens = normalizeNode(node)
-    const fp = fingerprint(tokens, params)
     return {
       file: filePath,
       startLine: node.startPosition.row + 1,
@@ -165,17 +165,17 @@ export function parseSource(
       type,
       language,
       tokenCount: tokens.length,
-      fingerprint: fp,
+      fingerprint: fingerprint(tokens, params),
     }
   })
 
   // Dedupe: a node can be reached through two cases (e.g. `export default
   // function f() {}` via function_declaration only, but wrappers can overlap).
-  const seen = new Set<string>()
-  return units.filter(u => {
-    const key = `${u.startLine}:${u.endLine}:${u.name}`
-    if (seen.has(key)) return false
-    seen.add(key)
+  const seenKeys = new Set<string>()
+  return units.filter(unit => {
+    const key = `${unit.startLine}:${unit.endLine}:${unit.name}`
+    if (seenKeys.has(key)) return false
+    seenKeys.add(key)
     return true
   })
 }

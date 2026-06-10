@@ -36,18 +36,18 @@ export interface CheckOptions {
 // the per-unit fingerprint Sets are built once; calling the returned function
 // per file only pays for the lookup, not for rebuilding the map.
 function buildMatcher(indexed: CodeUnit[], excludeFiles: Set<string>, threshold: number) {
-  const candidates = indexed.filter(u => !excludeFiles.has(u.file))
-  const candidateSets = candidates.map(u => new Set(u.fingerprint))
+  const candidates = indexed.filter(unit => !excludeFiles.has(unit.file))
+  const candidateSets = candidates.map(unit => new Set(unit.fingerprint))
 
-  const hashToIdx = new Map<number, number[]>()
-  for (let i = 0; i < candidates.length; i++) {
-    for (const h of candidates[i].fingerprint) {
-      let b = hashToIdx.get(h)
-      if (!b) {
-        b = []
-        hashToIdx.set(h, b)
+  const candidateIndicesByHash = new Map<number, number[]>()
+  for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex++) {
+    for (const hash of candidates[candidateIndex].fingerprint) {
+      let candidateIndices = candidateIndicesByHash.get(hash)
+      if (!candidateIndices) {
+        candidateIndices = []
+        candidateIndicesByHash.set(hash, candidateIndices)
       }
-      b.push(i)
+      candidateIndices.push(candidateIndex)
     }
   }
 
@@ -58,16 +58,16 @@ function buildMatcher(indexed: CodeUnit[], excludeFiles: Set<string>, threshold:
 
     for (const unit of units) {
       const unitSet = new Set(unit.fingerprint)
-      const seen = new Set<number>()
+      const seenCandidates = new Set<number>()
       let best: CheckMatch | null = null
 
-      for (const h of unit.fingerprint) {
-        for (const idx of hashToIdx.get(h) ?? []) {
-          if (seen.has(idx)) continue
-          seen.add(idx)
-          const sim = jaccardSets(unitSet, candidateSets[idx])
-          if (sim >= threshold && (!best || sim > best.similarity)) {
-            best = { unit, existing: candidates[idx], similarity: sim }
+      for (const hash of unit.fingerprint) {
+        for (const candidateIndex of candidateIndicesByHash.get(hash) ?? []) {
+          if (seenCandidates.has(candidateIndex)) continue
+          seenCandidates.add(candidateIndex)
+          const similarity = jaccardSets(unitSet, candidateSets[candidateIndex])
+          if (similarity >= threshold && (!best || similarity > best.similarity)) {
+            best = { unit, existing: candidates[candidateIndex], similarity }
           }
         }
       }
@@ -75,7 +75,7 @@ function buildMatcher(indexed: CodeUnit[], excludeFiles: Set<string>, threshold:
       if (best) matches.push(best)
     }
 
-    return matches.sort((a, b) => b.similarity - a.similarity)
+    return matches.sort((first, second) => second.similarity - first.similarity)
   }
 }
 
@@ -83,14 +83,14 @@ function buildMatcher(indexed: CodeUnit[], excludeFiles: Set<string>, threshold:
 // Name alone collides (every Ruby class has an `initialize`), so same-named
 // units are disambiguated by order of appearance.
 function occurrenceKeys(units: CodeUnit[]): Map<string, CodeUnit> {
-  const counts = new Map<string, number>()
-  const byKey = new Map<string, CodeUnit>()
-  for (const u of units) {
-    const n = counts.get(u.name) ?? 0
-    counts.set(u.name, n + 1)
-    byKey.set(`${u.name}#${n}`, u)
+  const occurrencesByName = new Map<string, number>()
+  const unitByKey = new Map<string, CodeUnit>()
+  for (const unit of units) {
+    const occurrence = occurrencesByName.get(unit.name) ?? 0
+    occurrencesByName.set(unit.name, occurrence + 1)
+    unitByKey.set(`${unit.name}#${occurrence}`, unit)
   }
-  return byKey
+  return unitByKey
 }
 
 export function checkFiles(
@@ -109,9 +109,9 @@ export function checkFiles(
   const results: FileCheckResult[] = []
   const allInserted: CodeUnit[] = []
 
-  for (let fi = 0; fi < files.length; fi++) {
-    const { absolutePath, repoRelativePath } = files[fi]
-    onProgress?.(fi + 1, files.length, absolutePath)
+  for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+    const { absolutePath, repoRelativePath } = files[fileIndex]
+    onProgress?.(fileIndex + 1, files.length, absolutePath)
     const currentUnits = parseFile(absolutePath, params).filter(u => u.tokenCount >= minTokens)
     if (currentUnits.length === 0) continue
 
@@ -124,17 +124,17 @@ export function checkFiles(
         ? parseSource(baseSource, absolutePath, params).filter(u => u.tokenCount >= minTokens)
         : []
 
-      const baseByKey = occurrenceKeys(baseUnits)
-      const currentKeys = occurrenceKeys(currentUnits)
-      const keyOf = new Map<CodeUnit, string>()
-      for (const [key, u] of currentKeys) keyOf.set(u, key)
+      const baseUnitByKey = occurrenceKeys(baseUnits)
+      const currentUnitByKey = occurrenceKeys(currentUnits)
+      const keyByUnit = new Map<CodeUnit, string>()
+      for (const [key, unit] of currentUnitByKey) keyByUnit.set(unit, key)
 
-      insertedUnits = currentUnits.filter(u => !baseByKey.has(keyOf.get(u)!))
-      modifiedUnits = currentUnits.filter(u => {
-        const baseUnit = baseByKey.get(keyOf.get(u)!)
+      insertedUnits = currentUnits.filter(unit => !baseUnitByKey.has(keyByUnit.get(unit)!))
+      modifiedUnits = currentUnits.filter(unit => {
+        const baseUnit = baseUnitByKey.get(keyByUnit.get(unit)!)
         if (!baseUnit) return false
-        const sim = jaccardSets(new Set(u.fingerprint), new Set(baseUnit.fingerprint))
-        return sim < 0.95 // structure changed meaningfully
+        const similarity = jaccardSets(new Set(unit.fingerprint), new Set(baseUnit.fingerprint))
+        return similarity < 0.95 // structure changed meaningfully
       })
     } else {
       // No base ref: treat all as insertions (uncommitted new code)
@@ -154,8 +154,8 @@ export function checkFiles(
 
   // Duplicates inside the changeset itself: new units compared against each
   // other (the index can't catch these — none of them is indexed yet).
-  const withIds = allInserted.map((u, i) => ({ ...u, id: i + 1 }))
-  const internal = groupClones(detectClones(withIds, { threshold }))
+  const insertedWithIds = allInserted.map((unit, index) => ({ ...unit, id: index + 1 }))
+  const internal = groupClones(detectClones(insertedWithIds, { threshold }))
 
   return { files: results, internal }
 }

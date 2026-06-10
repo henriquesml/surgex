@@ -9,32 +9,32 @@ export interface FingerprintParams {
 
 export const DEFAULT_PARAMS: FingerprintParams = { k: 5, w: 4 }
 
-function kgrams(tokens: string[], k: number): string[] {
-  const result: string[] = []
-  for (let i = 0; i <= tokens.length - k; i++) {
-    result.push(tokens.slice(i, i + k).join('\0'))
+function buildKGrams(tokens: string[], kGramSize: number): string[] {
+  const kGrams: string[] = []
+  for (let start = 0; start <= tokens.length - kGramSize; start++) {
+    kGrams.push(tokens.slice(start, start + kGramSize).join('\0'))
   }
-  return result
+  return kGrams
 }
 
 // FNV-1a: fast, low-collision, deterministic
-function fnv1a(s: string): number {
-  let h = 2166136261
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i)
-    h = Math.imul(h, 16777619)
+function hashFnv1a(text: string): number {
+  let hash = 2166136261
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
   }
-  return h >>> 0
+  return hash >>> 0
 }
 
-function winnow(hashes: number[], w: number): Set<number> {
+function winnow(hashes: number[], windowSize: number): Set<number> {
   const selected = new Set<number>()
-  for (let i = 0; i <= hashes.length - w; i++) {
-    let min = hashes[i]
-    for (let j = i + 1; j < i + w; j++) {
-      if (hashes[j] < min) min = hashes[j]
+  for (let windowStart = 0; windowStart <= hashes.length - windowSize; windowStart++) {
+    let minimum = hashes[windowStart]
+    for (let offset = windowStart + 1; offset < windowStart + windowSize; offset++) {
+      if (hashes[offset] < minimum) minimum = hashes[offset]
     }
-    selected.add(min)
+    selected.add(minimum)
   }
   return selected
 }
@@ -43,28 +43,28 @@ export function fingerprint(
   tokens: string[],
   params: FingerprintParams = DEFAULT_PARAMS,
 ): number[] {
-  const { k, w } = params
-  if (tokens.length < k) return tokens.map(fnv1a)
-  const grams = kgrams(tokens, k)
-  const hashes = grams.map(fnv1a)
-  if (hashes.length < w) return hashes
-  return Array.from(winnow(hashes, w))
+  const { k: kGramSize, w: windowSize } = params
+  if (tokens.length < kGramSize) return tokens.map(hashFnv1a)
+  const kGrams = buildKGrams(tokens, kGramSize)
+  const hashes = kGrams.map(hashFnv1a)
+  if (hashes.length < windowSize) return hashes
+  return Array.from(winnow(hashes, windowSize))
 }
 
-export function jaccard(a: number[], b: number[]): number {
-  return jaccardSets(new Set(a), new Set(b))
+export function jaccard(first: number[], second: number[]): number {
+  return jaccardSets(new Set(first), new Set(second))
 }
 
 // Set-based variant: callers comparing many pairs should build each unit's
 // Set once and reuse it, instead of paying two Set allocations per pair.
-export function jaccardSets(setA: Set<number>, setB: Set<number>): number {
-  if (setA.size === 0 && setB.size === 0) return 0
+export function jaccardSets(first: Set<number>, second: Set<number>): number {
+  if (first.size === 0 && second.size === 0) return 0
   // iterate the smaller set
-  const [small, large] = setA.size <= setB.size ? [setA, setB] : [setB, setA]
-  let intersection = 0
-  for (const h of small) {
-    if (large.has(h)) intersection++
+  const [smaller, larger] = first.size <= second.size ? [first, second] : [second, first]
+  let intersectionSize = 0
+  for (const hash of smaller) {
+    if (larger.has(hash)) intersectionSize++
   }
-  const union = setA.size + setB.size - intersection
-  return union === 0 ? 0 : intersection / union
+  const unionSize = first.size + second.size - intersectionSize
+  return unionSize === 0 ? 0 : intersectionSize / unionSize
 }

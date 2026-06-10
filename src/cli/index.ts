@@ -19,7 +19,7 @@ function parseNumberFlag(
   fallback: number,
   { min, max }: { min: number; max: number },
 ): number {
-  const match = args.find(a => a.startsWith(prefix))
+  const match = args.find(arg => arg.startsWith(prefix))
   if (!match) return fallback
   const value = parseFloat(match.slice(prefix.length))
   if (Number.isNaN(value) || value < min || value > max) {
@@ -31,7 +31,7 @@ function parseNumberFlag(
 }
 
 function parseStringFlag(args: string[], prefix: string): string {
-  const match = args.find(a => a.startsWith(prefix))
+  const match = args.find(arg => arg.startsWith(prefix))
   return match ? match.slice(prefix.length) : ''
 }
 
@@ -41,8 +41,8 @@ const progress = (current: number, total: number, label: string) => {
       `\x1b[2K\r  matching ${current.toLocaleString()}/${total.toLocaleString()} pairs`,
     )
   } else {
-    const short = label.split('/').slice(-2).join('/')
-    process.stderr.write(`\x1b[2K\r  ${current}/${total}  ${short}`)
+    const shortLabel = label.split('/').slice(-2).join('/')
+    process.stderr.write(`\x1b[2K\r  ${current}/${total}  ${shortLabel}`)
   }
 }
 
@@ -55,16 +55,20 @@ function requireIndex(store: Store): void {
 }
 
 async function runIndex(args: string[]): Promise<void> {
-  const targets = args.filter(a => !a.startsWith('--'))
+  const targetPaths = args.filter(arg => !arg.startsWith('--'))
   const verbose = args.includes('--verbose') || args.includes('-v')
   const force = args.includes('--force')
-  const k = parseNumberFlag(args, '--kgram=', DEFAULT_PARAMS.k, { min: 2, max: 50 })
-  const w = parseNumberFlag(args, '--window=', DEFAULT_PARAMS.w, { min: 1, max: 50 })
-  const paths = targets.length ? targets : [process.cwd()]
+  const kGramSize = parseNumberFlag(args, '--kgram=', DEFAULT_PARAMS.k, { min: 2, max: 50 })
+  const windowSize = parseNumberFlag(args, '--window=', DEFAULT_PARAMS.w, { min: 1, max: 50 })
+  const paths = targetPaths.length ? targetPaths : [process.cwd()]
 
   console.log(`Indexing: ${paths.join(', ')}`)
   const store = Store.discover()
-  const stats = await indexPaths(paths, store, { verbose, params: { k, w }, force })
+  const stats = await indexPaths(paths, store, {
+    verbose,
+    params: { k: kGramSize, w: windowSize },
+    force,
+  })
   const cacheNote = stats.reused > 0 ? `, ${stats.reused} unchanged from cache` : ''
   console.log(
     `Done: ${stats.units} units across ${stats.files} files ` +
@@ -85,8 +89,8 @@ async function runCheck(args: string[]): Promise<void> {
   const failOnFound = args.includes('--fail-on-found')
 
   if (all) {
-    const allUnits = store.getAll().filter(u => u.tokenCount >= minTokens)
-    const fileCount = new Set(allUnits.map(u => u.file)).size
+    const allUnits = store.getAll().filter(unit => unit.tokenCount >= minTokens)
+    const fileCount = new Set(allUnits.map(unit => unit.file)).size
     process.stderr.write(`Checking ${fileCount} file(s) [all indexed files]\n`)
 
     const pairs = detectClones(allUnits, { threshold, onProgress: json ? undefined : progress })
@@ -98,35 +102,38 @@ async function runCheck(args: string[]): Promise<void> {
     return
   }
 
-  const explicitFiles = args.filter(a => !a.startsWith('--'))
+  const explicitFiles = args.filter(arg => !arg.startsWith('--'))
   let relevant: Array<{ absolutePath: string; repoRelativePath: string }>
   let repoRoot: string
   let label: string
 
   if (explicitFiles.length > 0) {
     repoRoot = process.cwd()
-    const expanded: Array<{ absolutePath: string; repoRelativePath: string }> = []
+    const expandedFiles: Array<{ absolutePath: string; repoRelativePath: string }> = []
     for (const arg of explicitFiles) {
-      const abs = path.resolve(arg)
-      if (fs.statSync(abs, { throwIfNoEntry: false })?.isDirectory()) {
+      const absolutePath = path.resolve(arg)
+      if (fs.statSync(absolutePath, { throwIfNoEntry: false })?.isDirectory()) {
         const files = await glob(FILE_PATTERNS, {
-          cwd: abs,
+          cwd: absolutePath,
           absolute: true,
           ignore: IGNORE,
         })
-        for (const f of files) {
-          expanded.push({ absolutePath: f, repoRelativePath: path.relative(repoRoot, f) })
+        for (const file of files) {
+          expandedFiles.push({
+            absolutePath: file,
+            repoRelativePath: path.relative(repoRoot, file),
+          })
         }
       } else {
-        expanded.push({ absolutePath: abs, repoRelativePath: arg })
+        expandedFiles.push({ absolutePath, repoRelativePath: arg })
       }
     }
-    relevant = expanded
+    relevant = expandedFiles
     label = `${relevant.length} file(s) in ${explicitFiles.join(', ')}`
   } else {
-    const git = getChangedFiles(process.cwd(), from || undefined)
-    repoRoot = git.repoRoot
-    relevant = git.changedFiles.filter(f => /\.(ts|tsx|rb)$/.test(f.absolutePath))
+    const gitContext = getChangedFiles(process.cwd(), from || undefined)
+    repoRoot = gitContext.repoRoot
+    relevant = gitContext.changedFiles.filter(file => /\.(ts|tsx|rb)$/.test(file.absolutePath))
     label = from ? `branch diff vs ${from}` : 'uncommitted changes'
   }
 
@@ -165,11 +172,11 @@ async function main(argv: string[]): Promise<void> {
   }
 }
 
-main(process.argv.slice(2)).catch(err => {
-  if (err instanceof UsageError) {
-    console.error(`Error: ${err.message}`)
+main(process.argv.slice(2)).catch(error => {
+  if (error instanceof UsageError) {
+    console.error(`Error: ${error.message}`)
   } else {
-    console.error(err)
+    console.error(error)
   }
   process.exit(1)
 })

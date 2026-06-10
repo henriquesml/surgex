@@ -17,21 +17,21 @@ export interface ReportOptions extends FormatOptions {
 // alone tells the story). Groups left with fewer than 2 units are removed.
 function dropContainedUnits(groups: CloneGroup[]): CloneGroup[] {
   return groups
-    .map(g => ({
-      ...g,
-      units: g.units.filter(
-        u =>
-          !g.units.some(
+    .map(group => ({
+      ...group,
+      units: group.units.filter(
+        unit =>
+          !group.units.some(
             other =>
-              other !== u &&
-              other.file === u.file &&
-              other.startLine <= u.startLine &&
-              other.endLine >= u.endLine &&
-              (other.startLine < u.startLine || other.endLine > u.endLine),
+              other !== unit &&
+              other.file === unit.file &&
+              other.startLine <= unit.startLine &&
+              other.endLine >= unit.endLine &&
+              (other.startLine < unit.startLine || other.endLine > unit.endLine),
           ),
       ),
     }))
-    .filter(g => g.units.length >= 2)
+    .filter(group => group.units.length >= 2)
 }
 
 function toJson(display: DisplayGroup[], rel: (f: string) => string): string {
@@ -55,27 +55,28 @@ function toJson(display: DisplayGroup[], rel: (f: string) => string): string {
   return JSON.stringify(out, null, 2) + '\n'
 }
 
-function relativizer(root: string): (f: string) => string {
-  return (f: string) => (root && f.startsWith(root) ? f.slice(root.length).replace(/^\//, '') : f)
+function relativizer(root: string): (file: string) => string {
+  return (file: string) =>
+    root && file.startsWith(root) ? file.slice(root.length).replace(/^\//, '') : file
 }
 
 // ── full-scan report (`check --all`): CloneGroup[] → formatted string ───────
 
 export function formatReport(rawGroups: CloneGroup[], options: ReportOptions = {}): string {
   const groups = dropContainedUnits(rawGroups)
-  const files = [...new Set(groups.flatMap(g => g.units.map(u => u.file)))]
+  const files = [...new Set(groups.flatMap(group => group.units.map(unit => unit.file)))]
   const root = options.repoRoot ?? commonDirPrefix(files)
-  const shortDir = (fs: string[]) => {
-    const prefix = commonDirPrefix(fs)
-    const segs = prefix.split('/').filter(Boolean)
-    return segs.length ? segs.slice(-2).join('/') + '/' : ''
+  const shortDir = (dirFiles: string[]) => {
+    const prefix = commonDirPrefix(dirFiles)
+    const segments = prefix.split('/').filter(Boolean)
+    return segments.length ? segments.slice(-2).join('/') + '/' : ''
   }
 
   const display: DisplayGroup[] = groups.map(({ similarity, units }) => {
     const type = cloneType(similarity, units)
-    const unitFiles = [...new Set(units.map(u => u.file))]
+    const unitFiles = [...new Set(units.map(unit => unit.file))]
     const unitLabel =
-      [...new Set(units.map(u => u.type))].length === 1
+      [...new Set(units.map(unit => unit.type))].length === 1
         ? `${units.length} ${units[0].type}${units.length > 1 ? 's' : ''}`
         : `${units.length} units`
 
@@ -108,25 +109,25 @@ export function formatCheckReport(
   const display: DisplayGroup[] = []
 
   for (const { insertions, modifications } of report.files) {
-    for (const m of insertions) {
+    for (const match of insertions) {
       display.push({
-        similarity: m.similarity,
-        cloneType: cloneType(m.similarity, [m.unit, m.existing]),
-        description: `insertion in ${m.unit.file.split('/').pop()}`,
+        similarity: match.similarity,
+        cloneType: cloneType(match.similarity, [match.unit, match.existing]),
+        description: `insertion in ${match.unit.file.split('/').pop()}`,
         units: [
-          { unit: m.unit, role: 'new' },
-          { unit: m.existing, role: 'existing' },
+          { unit: match.unit, role: 'new' },
+          { unit: match.existing, role: 'existing' },
         ],
       })
     }
-    for (const m of modifications) {
+    for (const match of modifications) {
       display.push({
-        similarity: m.similarity,
-        cloneType: cloneType(m.similarity, [m.unit, m.existing]),
-        description: `modification in ${m.unit.file.split('/').pop()}`,
+        similarity: match.similarity,
+        cloneType: cloneType(match.similarity, [match.unit, match.existing]),
+        description: `modification in ${match.unit.file.split('/').pop()}`,
         units: [
-          { unit: m.unit, role: 'changed' },
-          { unit: m.existing, role: 'existing' },
+          { unit: match.unit, role: 'changed' },
+          { unit: match.existing, role: 'existing' },
         ],
       })
     }
@@ -148,7 +149,7 @@ export function formatCheckReport(
 // Number of findings — used by the CLI for `--fail-on-found`.
 export function countFindings(report: CheckReport): number {
   const fileMatches = report.files.reduce(
-    (n, f) => n + f.insertions.length + f.modifications.length,
+    (total, file) => total + file.insertions.length + file.modifications.length,
     0,
   )
   return fileMatches + dropContainedUnits(report.internal).length
