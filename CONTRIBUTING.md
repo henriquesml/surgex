@@ -31,7 +31,7 @@ src/
   lang/      Language/syntax knowledge (tree-sitter parsing).
   io/        The boundary with the outside world: filesystem, git, index store.
   pipeline/  Orchestration — combines core + lang + io (indexer, checker).
-  report/    Presentation: formatting and the side-by-side diff.
+  report/    Presentation: formatting and the side-by-side structural match view.
   cli/        Argument parsing and command dispatch.
   index.ts   Public library API.
 ```
@@ -48,8 +48,11 @@ npm run lint          # must pass
 npm run format:check  # must pass (run `npm run format` to fix)
 ```
 
-(Test suite is coming — see the roadmap in the README. Until then, please
-describe how you manually verified your change in the PR.)
+Run the test suite too when your change affects behavior:
+
+```bash
+npm test
+```
 
 ## Coding style
 

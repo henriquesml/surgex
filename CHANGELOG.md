@@ -82,4 +82,5 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - Initial release: deterministic code clone detector with `index` and `check`
   commands. Winnowing fingerprints, Jaccard similarity, Union-Find grouping,
-  and LCS-based side-by-side diff. Supports TypeScript, TSX, and Ruby.
+  and an LCS-based side-by-side structural match view. Supports TypeScript,
+  TSX, and Ruby.

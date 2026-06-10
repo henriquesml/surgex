@@ -106,7 +106,7 @@ export function formatReport(rawGroups: CloneGroup[], options: ReportOptions = {
   return formatGroups(display, { ...options, repoRoot: root })
 }
 
-// ── diff report (`check`): CheckReport → formatted string ───────────────────
+// ── check report (`check`): CheckReport → formatted string ──────────────────
 
 export function formatCheckReport(
   report: CheckReport,

@@ -171,7 +171,7 @@ describe('formatGroups', () => {
     expect(output).toContain('/elsewhere/src/a.ts')
   })
 
-  it('renders showCode diff when showCode is true', () => {
+  it('renders the structural match view when showCode is true', () => {
     const fileA = path.join(tmp, 'a.ts')
     const fileB = path.join(tmp, 'b.ts')
     fs.writeFileSync(fileA, 'function foo() {\n  return 1\n}\n')
@@ -406,7 +406,7 @@ describe('renderStructuralMatchView', () => {
     expect(result).toBe('')
   })
 
-  it('renders a side-by-side diff of two real files', () => {
+  it('renders a side-by-side structural match view of two real files', () => {
     const fileA = path.join(tmp, 'a.ts')
     const fileB = path.join(tmp, 'b.ts')
     fs.writeFileSync(fileA, 'function foo(x) {\n  return x + 1\n}\n')
@@ -417,7 +417,7 @@ describe('renderStructuralMatchView', () => {
     expect(result).toContain('lines structurally matched')
   })
 
-  it('backtracks through equal and non-equal rows in the structural diff', () => {
+  it('backtracks through equal and non-equal rows in the structural match walk', () => {
     const fileA = path.join(tmp, 'lcs-a.ts')
     const fileB = path.join(tmp, 'lcs-b.ts')
     fs.writeFileSync(fileA, 'value = 1\nvalue = 1\nvalue = 1\n')
@@ -464,7 +464,7 @@ describe('renderStructuralMatchView', () => {
     expect(result).toContain('0 of 0 lines structurally matched (0%)')
   })
 
-  it('skips the diff when units are too large', () => {
+  it('skips the structural match view when units are too large', () => {
     const lines = Array.from({ length: 1001 }, (_, i) => `const x${i} = ${i}`).join('\n')
     const fileA = path.join(tmp, 'big_a.ts')
     const fileB = path.join(tmp, 'big_b.ts')
