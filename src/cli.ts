@@ -118,13 +118,13 @@ async function main() {
 
     default:
       console.log([
-        'dry — deterministic code clone detector',
+        'surgex — deterministic code clone detector',
         '',
         'Commands:',
-        '  dry index [paths...]          Index the codebase (default: cwd)',
-        '    --verbose                   Print each indexed file',
+        '  surgex index [paths...]          Index the codebase (default: cwd)',
+        '    --verbose                      Print each indexed file',
         '',
-        '  dry check                     Check for duplicates',
+        '  surgex check                     Check for duplicates',
         '    (no flags)                  Uncommitted changes vs index',
         '    --all                       All indexed files (full scan)',
         '    --from=main                 Branch diff vs base ref',

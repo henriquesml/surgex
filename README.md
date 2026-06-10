@@ -9,11 +9,11 @@ No LLM. No embeddings. No external services. Every result is reproducible.
 
 ## What it does
 
-`dry` indexes a codebase, computes structural fingerprints for every code unit (function, method, component, class), and detects which ones share the same shape — even when variable names, types, and API calls differ.
+`surgex` indexes a codebase, computes structural fingerprints for every code unit (function, method, component, class), and detects which ones share the same shape — even when variable names, types, and API calls differ.
 
 Two commands:
 
-- **`index`** — parses the codebase and saves the fingerprint index to `.dry/index.json`
+- **`index`** — parses the codebase and saves the fingerprint index to `.surgex/index.json`
 - **`check`** — compares files against the index and reports clone groups
 
 ---
@@ -91,7 +91,7 @@ This is deterministic, symmetric, and requires no training data.
 
 Comparing all pairs of N units naively is O(N²). For large codebases this is slow.
 
-`dry` avoids it with a hash-bucket pre-filter:
+`surgex` avoids it with a hash-bucket pre-filter:
 
 1. Build a map: `hash → [unit indices]`
 2. Any two units that share at least one fingerprint hash are *candidate pairs*
@@ -101,11 +101,11 @@ In practice, only a small fraction of all possible pairs share any hash, so the 
 
 ### 6. Clone grouping — Union-Find
 
-Clone pairs are often transitive: if A is similar to B and B is similar to C, all three belong to the same group. `dry` clusters them with a **Union-Find** (disjoint set) data structure, producing clone *groups* rather than a flat list of pairs.
+Clone pairs are often transitive: if A is similar to B and B is similar to C, all three belong to the same group. `surgex` clusters them with a **Union-Find** (disjoint set) data structure, producing clone *groups* rather than a flat list of pairs.
 
 ### 7. Visual diff — LCS on normalized lines
 
-With `--show-code`, `dry` shows both code blocks side by side with each structurally duplicated line marked with `≡`.
+With `--show-code`, `surgex` shows both code blocks side by side with each structurally duplicated line marked with `≡`.
 
 The matching is done with **Longest Common Subsequence (LCS)** on normalized lines: each line is independently normalized (same identifier → `ID` substitution), and the LCS of these normalized sequences identifies which lines are structurally identical across the two functions.
 
@@ -113,61 +113,61 @@ The matching is done with **Longest Common Subsequence (LCS)** on normalized lin
 
 ## Storage
 
-The index is stored at `.dry/index.json` relative to the directory where `dry index` was run. It persists between runs — `dry check` reads it without re-indexing.
+The index is stored at `.surgex/index.json` relative to the directory where `surgex index` was run. It persists between runs — `surgex check` reads it without re-indexing.
 
-When `dry` is invoked from a subdirectory, it walks up the directory tree to find the nearest `.dry/` folder, similar to how `git` finds `.git/`.
+When `surgex` is invoked from a subdirectory, it walks up the directory tree to find the nearest `.surgex/` folder, similar to how `git` finds `.git/`.
 
 ---
 
 ## Installation
 
 ```bash
-git clone https://github.com/yourorg/dry
-cd dry
+git clone https://github.com/yourorg/surgex
+cd surgex
 npm install
 npm run build
-npm link        # makes `dry` available globally
+npm link        # makes `surgex` available globally
 ```
 
 Or run directly without installing:
 
 ```bash
-npx ts-node /path/to/dry/src/cli.ts <command>
+npx ts-node /path/to/surgex/src/cli.ts <command>
 ```
 
 ---
 
 ## Commands
 
-### `dry index [paths...]`
+### `surgex index [paths...]`
 
-Indexes all `.ts`, `.tsx`, and `.rb` files under the given paths. Saves the result to `.dry/index.json` in the current directory.
+Indexes all `.ts`, `.tsx`, and `.rb` files under the given paths. Saves the result to `.surgex/index.json` in the current directory.
 
 ```bash
-dry index                          # index from current directory
-dry index src/                     # index a specific path
-dry index src/ lib/                # index multiple paths
-dry index --verbose                # print each indexed file
+surgex index                          # index from current directory
+surgex index src/                     # index a specific path
+surgex index src/ lib/                # index multiple paths
+surgex index --verbose                # print each indexed file
 ```
 
 Ignored automatically: `node_modules`, `dist`, `tmp`, `vendor`, `coverage`, `.git`, `spec/fixtures`.
 
 ---
 
-### `dry check`
+### `surgex check`
 
 Compares files against the index and reports clone groups. Behavior depends on the flags passed.
 
 ```bash
-dry check                                   # uncommitted changes (staged + unstaged + untracked)
-dry check --all                             # all indexed files — full scan
-dry check --from=main                       # all changes in current branch vs main
-dry check src/hooks/useMyHook.ts            # specific file
-dry check src/hooks/                        # all files in a directory
-dry check src/hooks/ src/components/        # multiple directories and files
+surgex check                                   # uncommitted changes (staged + unstaged + untracked)
+surgex check --all                             # all indexed files — full scan
+surgex check --from=main                       # all changes in current branch vs main
+surgex check src/hooks/useMyHook.ts            # specific file
+surgex check src/hooks/                        # all files in a directory
+surgex check src/hooks/ src/components/        # multiple directories and files
 ```
 
-When a path argument is a directory, `dry` globs all `.ts`, `.tsx`, and `.rb` files inside it automatically.
+When a path argument is a directory, `surgex` globs all `.ts`, `.tsx`, and `.rb` files inside it automatically.
 
 Options:
 | Flag | Default | Description |
@@ -258,7 +258,7 @@ src/
   normalizer.ts     — AST node → normalized token sequence
   fingerprinter.ts  — Winnowing algorithm + FNV-1a hash + Jaccard
   parser.ts         — tree-sitter: extracts code units from TS and Ruby
-  store.ts          — JSON index persistence (.dry/index.json)
+  store.ts          — JSON index persistence (.surgex/index.json)
   detector.ts       — hash bucket filtering + Jaccard computation
   reporter.ts       — Union-Find grouping + report formatting
   indexer.ts        — glob + parse + save pipeline

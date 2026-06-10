@@ -1,10 +1,10 @@
 {
-  "name": "dry",
+  "name": "surgex",
   "version": "0.1.0",
   "description": "Deterministic code clone detector — finds componentization opportunities",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "bin": { "dry": "dist/cli.js" },
+  "bin": { "surgex": "dist/cli.js" },
   "scripts": {
     "build": "tsc",
     "dev": "ts-node src/cli.ts",

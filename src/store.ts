@@ -5,14 +5,14 @@ import type { CodeUnit } from './types'
 function findIndexDir(): string {
   let dir = process.cwd()
   while (true) {
-    const candidate = path.join(dir, '.dry')
+    const candidate = path.join(dir, '.surgex')
     if (fs.existsSync(candidate)) return candidate
     const parent = path.dirname(dir)
     if (parent === dir) break  // reached filesystem root
     dir = parent
   }
-  // No existing .dry found — create it in cwd
-  return path.join(process.cwd(), '.dry')
+  // No existing .surgex found — create it in cwd
+  return path.join(process.cwd(), '.surgex')
 }
 
 const INDEX_DIR = findIndexDir()
