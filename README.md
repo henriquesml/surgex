@@ -1,4 +1,4 @@
-# dry
+# surgex
 
 Deterministic code clone detector. Finds functions, methods, and components that are structurally identical or very similar — candidates for extraction and componentization.
 
