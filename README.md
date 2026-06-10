@@ -1,4 +1,5 @@
-# surgex
+<img width="100%"  alt="image" src="https://github.com/user-attachments/assets/1f55b27f-3a1e-411c-997b-8102deea610f" />
+
 
 Deterministic code clone detector. Finds functions, methods, and components that are structurally identical or very similar — candidates for extraction and componentization.
 
