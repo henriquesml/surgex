@@ -18,7 +18,7 @@ function normalizeLine(line: string): string {
 }
 
 // The full DP table is O(m·n) memory; beyond this many cells (~1M ≈ two
-// 1000-line units) the diff is skipped rather than risking an OOM.
+// 1000-line units) the structural match view is skipped rather than risking an OOM.
 const MAX_LCS_CELLS = 1_000_000
 
 // LCS on normalized lines to find matching pairs
@@ -49,7 +49,7 @@ function lcsLines(linesA: string[], linesB: string[]): Array<[number, number]> {
   return matchedPairs
 }
 
-export function showDuplicatedLines(
+export function renderStructuralMatchView(
   labelA: string,
   fileA: string,
   startA: number,
@@ -66,7 +66,7 @@ export function showDuplicatedLines(
   if (linesA.length === 0 || linesB.length === 0) return ''
 
   if (linesA.length * linesB.length > MAX_LCS_CELLS) {
-    return `${indent}(units too large to diff — ${linesA.length} × ${linesB.length} lines)\n`
+    return `${indent}(units too large to compare — ${linesA.length} × ${linesB.length} lines)\n`
   }
 
   const normalizedA = linesA.map(normalizeLine)
@@ -83,10 +83,10 @@ export function showDuplicatedLines(
     }
   }
 
-  const duplicatedCount = matchedRowsA.size
+  const matchedLineCount = matchedRowsA.size
   const significantCount = linesA.filter(line => line.trim().length > 2).length
-  const duplicatedPercent =
-    significantCount > 0 ? Math.round((duplicatedCount / significantCount) * 100) : 0
+  const matchedPercent =
+    significantCount > 0 ? Math.round((matchedLineCount / significantCount) * 100) : 0
 
   const lines: string[] = []
   const colorize = (color: string, text: string) =>
@@ -102,8 +102,8 @@ export function showDuplicatedLines(
   for (let row = 0; row < rowCount; row++) {
     const lineA = linesA[row] ?? ''
     const lineB = linesB[row] ?? ''
-    const isDuplicated = matchedRowsA.has(row) || matchedRowsB.has(row)
-    const marker = isDuplicated ? colorize(YELLOW, ' ≡ ') : colorize(DIM, '   ')
+    const isMatched = matchedRowsA.has(row) || matchedRowsB.has(row)
+    const marker = isMatched ? colorize(YELLOW, ' ≡ ') : colorize(DIM, '   ')
     lines.push(indent + colorize(DIM, lineA.padEnd(columnWidth)) + marker + colorize(DIM, lineB))
   }
 
@@ -112,7 +112,7 @@ export function showDuplicatedLines(
     indent +
       colorize(
         BOLD,
-        `${duplicatedCount} of ${significantCount} lines structurally duplicated (${duplicatedPercent}%)`,
+        `${matchedLineCount} of ${significantCount} lines structurally matched (${matchedPercent}%)`,
       ),
   )
 

@@ -40,6 +40,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--threshold=abc`) abort instead of silently matching nothing.
 - Clone groups no longer list units that are fully contained in another unit
   of the same group (a cloned class no longer re-lists each of its methods).
+- The `report/diff.ts` presentation module was renamed to
+  `report/structural-match-view.ts`, and `--show-code` now consistently refers
+  to structural matches rather than diffs.
 
 ### Fixed
 - `surgex report` crashed with infinite recursion (`Maximum call stack size
@@ -52,7 +55,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The candidate-pair key in the detector no longer collides on very large
   codebases.
 - `--show-code` no longer risks out-of-memory on extremely large units; the
-  diff is skipped above ~1M line-pair comparisons.
+  structural match view is skipped above ~1M line-pair comparisons.
+- The parser no longer indexes malformed TypeScript or Ruby units with empty
+  names when tree-sitter produces partial nodes from invalid source.
 
 ### Performance
 - The hash → unit lookup map is built once per check instead of twice per
@@ -69,6 +74,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no longer performs O(N²) disk I/O on large codebases.
 - The published binary now uses a `#!/usr/bin/env node` shebang and `bin`
   resolves to the correct compiled entry point.
+- Test coverage now exercises the full repository at 100% statements,
+  branches, functions, and lines.
 
 ## [0.1.0]
 

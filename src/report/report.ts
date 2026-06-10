@@ -12,6 +12,13 @@ export interface ReportOptions extends FormatOptions {
   json?: boolean
 }
 
+const PLURAL_TYPE: Record<CodeUnit['type'], string> = {
+  arrow: 'arrows',
+  class: 'classes',
+  function: 'functions',
+  method: 'methods',
+}
+
 // Drops units that are fully contained in another unit of the same group
 // (e.g. a cloned class and each of its methods land in one group — the class
 // alone tells the story). Groups left with fewer than 2 units are removed.
@@ -77,7 +84,7 @@ export function formatReport(rawGroups: CloneGroup[], options: ReportOptions = {
     const unitFiles = [...new Set(units.map(unit => unit.file))]
     const unitLabel =
       [...new Set(units.map(unit => unit.type))].length === 1
-        ? `${units.length} ${units[0].type}${units.length > 1 ? 's' : ''}`
+        ? `${units.length} ${PLURAL_TYPE[units[0].type]}`
         : `${units.length} units`
 
     const location =

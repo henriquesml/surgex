@@ -1,4 +1,4 @@
-import { showDuplicatedLines } from './diff'
+import { renderStructuralMatchView } from './structural-match-view'
 import type { CodeUnit } from '../types'
 
 export type UnitRole = 'new' | 'changed' | 'existing' | undefined
@@ -97,7 +97,7 @@ export function formatGroups(groups: DisplayGroup[], options: FormatOptions = {}
         const lastLabel = `${lastUnit.name}${units[units.length - 1].role ? ` (${units[units.length - 1].role})` : ''}`
         lines.push('')
         lines.push(
-          showDuplicatedLines(
+          renderStructuralMatchView(
             firstLabel,
             firstUnit.file,
             firstUnit.startLine,

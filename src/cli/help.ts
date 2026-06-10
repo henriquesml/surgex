@@ -16,7 +16,7 @@ export const HELP = [
   '    [files...]                  Specific files vs index',
   '    --threshold=0.75            Similarity cutoff (default: 0.75)',
   '    --min-tokens=20             Ignore small units (default: 20)',
-  '    --show-code                 Show duplicated lines side by side',
+  '    --show-code                 Show structural matches side by side',
   '    --json                      Machine-readable JSON output',
   '    --fail-on-found             Exit with code 1 if clones are found (CI gate)',
   '',
