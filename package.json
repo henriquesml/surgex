@@ -34,7 +34,7 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "scripts": {
     "build": "tsc",
@@ -43,6 +43,8 @@
     "report": "ts-node src/cli/index.ts report",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "prepublishOnly": "npm run build"
@@ -57,6 +59,7 @@
     "@types/node": "^22.19.20",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
+    "@vitest/coverage-v8": "^4.1.8",
     "eslint": "^8.57.0",
     "prettier": "^3.3.3",
     "ts-node": "^10.9.2",
