@@ -57,14 +57,19 @@ function requireIndex(store: Store): void {
 async function runIndex(args: string[]): Promise<void> {
   const targets = args.filter(a => !a.startsWith('--'))
   const verbose = args.includes('--verbose') || args.includes('-v')
+  const force = args.includes('--force')
   const k = parseNumberFlag(args, '--kgram=', DEFAULT_PARAMS.k, { min: 2, max: 50 })
   const w = parseNumberFlag(args, '--window=', DEFAULT_PARAMS.w, { min: 1, max: 50 })
   const paths = targets.length ? targets : [process.cwd()]
 
   console.log(`Indexing: ${paths.join(', ')}`)
   const store = Store.discover()
-  const stats = await indexPaths(paths, store, { verbose, params: { k, w } })
-  console.log(`Done: ${stats.units} units across ${stats.files} files (${stats.durationMs}ms)`)
+  const stats = await indexPaths(paths, store, { verbose, params: { k, w }, force })
+  const cacheNote = stats.reused > 0 ? `, ${stats.reused} unchanged from cache` : ''
+  console.log(
+    `Done: ${stats.units} units across ${stats.files} files ` +
+      `(${stats.parsed} parsed${cacheNote}, ${stats.durationMs}ms)`,
+  )
 }
 
 async function runCheck(args: string[]): Promise<void> {

@@ -8,13 +8,26 @@ export interface StoredUnit extends Omit<CodeUnit, 'id'> {
   id: number
 }
 
+// Cheap change detection: a file whose mtime and size both match the cached
+// entry is assumed unchanged and its units are reused without re-parsing.
+export interface FileMeta {
+  mtimeMs: number
+  size: number
+}
+
+export interface FileCacheEntry {
+  meta: FileMeta
+  units: CodeUnit[]
+}
+
 interface IndexData {
   version: number
   params: FingerprintParams
+  files: Record<string, FileMeta> // project-root-relative path → stat snapshot
   units: StoredUnit[]
 }
 
-const INDEX_VERSION = 1
+const INDEX_VERSION = 2
 
 // Persists the fingerprint index to <dir>/index.json.
 //
@@ -62,7 +75,7 @@ export class Store {
   private read(): IndexData {
     if (this.cache) return this.cache
     if (!this.exists()) {
-      return { version: INDEX_VERSION, params: DEFAULT_PARAMS, units: [] }
+      return { version: INDEX_VERSION, params: DEFAULT_PARAMS, files: {}, units: [] }
     }
 
     let raw: unknown
@@ -81,16 +94,63 @@ export class Store {
     this.cache = data
   }
 
+  private relativize(file: string): string {
+    return path.isAbsolute(file) ? path.relative(this.root, file) : file
+  }
+
+  private absolutize(file: string): string {
+    return path.isAbsolute(file) ? file : path.resolve(this.root, file)
+  }
+
   // Replaces the entire index in a single write. Each unit is assigned a fresh
-  // id and its file path is made relative to the project root.
-  replaceAll(units: CodeUnit[], params: FingerprintParams = DEFAULT_PARAMS): void {
+  // id and its file path is made relative to the project root. `fileMeta`
+  // (file path → stat snapshot) enables incremental re-indexing; without it
+  // the next `surgex index` re-parses everything.
+  replaceAll(
+    units: CodeUnit[],
+    params: FingerprintParams = DEFAULT_PARAMS,
+    fileMeta?: Map<string, FileMeta>,
+  ): void {
     let nextId = 1
     const stored: StoredUnit[] = units.map(u => ({
       ...u,
       id: nextId++,
-      file: path.isAbsolute(u.file) ? path.relative(this.root, u.file) : u.file,
+      file: this.relativize(u.file),
     }))
-    this.write({ version: INDEX_VERSION, params, units: stored })
+    const files: Record<string, FileMeta> = {}
+    if (fileMeta) {
+      for (const [file, meta] of fileMeta) files[this.relativize(file)] = meta
+    }
+    this.write({ version: INDEX_VERSION, params, files, units: stored })
+  }
+
+  // Per-file parse cache for incremental indexing: every indexed file (keyed
+  // by absolute path) with its stat snapshot and previously parsed units.
+  // Returns null when there is no usable cache — no index yet, or it was
+  // built with different fingerprint params (fingerprints wouldn't match).
+  fileCache(params: FingerprintParams): Map<string, FileCacheEntry> | null {
+    if (!this.exists()) return null
+    const data = this.read()
+    if (data.params.k !== params.k || data.params.w !== params.w) return null
+
+    const unitsByFile = new Map<string, CodeUnit[]>()
+    for (const stored of data.units) {
+      const abs = this.absolutize(stored.file)
+      let list = unitsByFile.get(abs)
+      if (!list) {
+        list = []
+        unitsByFile.set(abs, list)
+      }
+      // stale ids are harmless: replaceAll always reassigns them
+      list.push({ ...stored, file: abs })
+    }
+
+    const cache = new Map<string, FileCacheEntry>()
+    for (const [rel, meta] of Object.entries(data.files)) {
+      const abs = this.absolutize(rel)
+      cache.set(abs, { meta, units: unitsByFile.get(abs) ?? [] })
+    }
+    return cache
   }
 
   // Fingerprint parameters the index was built with. Checks must use the same
@@ -100,10 +160,7 @@ export class Store {
   }
 
   getAll(): StoredUnit[] {
-    return this.read().units.map(u => ({
-      ...u,
-      file: path.isAbsolute(u.file) ? u.file : path.resolve(this.root, u.file),
-    }))
+    return this.read().units.map(u => ({ ...u, file: this.absolutize(u.file) }))
   }
 
   count(): number {
@@ -127,6 +184,21 @@ function validateIndex(raw: unknown, indexPath: string): IndexData {
   const params = data.params as Record<string, unknown> | undefined
   if (!params || typeof params.k !== 'number' || typeof params.w !== 'number') {
     fail('missing fingerprint params')
+  }
+
+  if (typeof data.files !== 'object' || data.files === null || Array.isArray(data.files)) {
+    fail('files is not an object')
+  }
+  for (const meta of Object.values(data.files as Record<string, unknown>)) {
+    const m = meta as Record<string, unknown>
+    if (
+      typeof m !== 'object' ||
+      m === null ||
+      typeof m.mtimeMs !== 'number' ||
+      typeof m.size !== 'number'
+    ) {
+      fail('malformed file entry')
+    }
   }
 
   if (!Array.isArray(data.units)) fail('units is not an array')

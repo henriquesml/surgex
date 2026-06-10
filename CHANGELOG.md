@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Incremental indexing: `surgex index` stores each file's mtime and size in
+  the index (format v2) and only re-parses files that changed since the last
+  run; deleted files drop out automatically. The cache is bypassed when the
+  Winnowing parameters change or with the new `index --force` flag.
 - `check --json` — machine-readable output for CI and editor integrations.
 - `check --fail-on-found` — exits with code 1 when clones are found, so
   `surgex` can gate CI pipelines.

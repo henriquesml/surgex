@@ -10,6 +10,7 @@ export { Store } from './io/store'
 export { UsageError } from './errors'
 
 export type { IndexOptions } from './pipeline/indexer'
+export type { FileMeta, FileCacheEntry, StoredUnit } from './io/store'
 export type { CheckMatch, FileCheckResult, CheckReport, CheckOptions } from './pipeline/checker'
 export type { DetectOptions } from './core/detector'
 export type { FingerprintParams } from './core/fingerprint'

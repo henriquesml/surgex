@@ -27,5 +27,7 @@ export interface CloneGroup {
 export interface IndexStats {
   files: number
   units: number
+  parsed: number // files re-parsed this run
+  reused: number // files reused from the cache (unchanged since last index)
   durationMs: number
 }

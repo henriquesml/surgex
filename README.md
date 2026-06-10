@@ -148,11 +148,14 @@ npx ts-node /path/to/surgex/src/cli/index.ts <command>
 
 Indexes all `.ts`, `.tsx`, and `.rb` files under the given paths. Saves the result to `.surgex/index.json` in the current directory.
 
+Indexing is **incremental**: each file's `mtime` and size are stored in the index, and on re-index only files that changed are re-parsed — unchanged files have their fingerprints carried over from the previous run. Deleted files drop out of the index automatically. The cache is bypassed when the Winnowing parameters change (old fingerprints would not match) or with `--force`.
+
 ```bash
 surgex index                          # index from current directory
 surgex index src/                     # index a specific path
 surgex index src/ lib/                # index multiple paths
-surgex index --verbose                # print each indexed file
+surgex index --verbose                # print each indexed file (parsed vs cached)
+surgex index --force                  # re-parse everything, ignoring the cache
 surgex index --kgram=7 --window=5     # tune Winnowing parameters
 ```
 
