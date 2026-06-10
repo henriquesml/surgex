@@ -1,5 +1,7 @@
 #!/usr/bin/env ts-node
 import * as path from 'path'
+import * as fs from 'fs'
+import { glob } from 'glob'
 import { indexPaths } from './indexer'
 import { detectClones } from './detector'
 import { groupClones, formatReport } from './reporter'
@@ -72,11 +74,24 @@ async function main() {
 
       if (explicitFiles.length > 0) {
         repoRoot = process.cwd()
-        relevant = explicitFiles.map(f => ({
-          absolutePath: path.resolve(f),
-          repoRelativePath: f,
-        }))
-        label = `${relevant.length} file(s) specified`
+        const expanded: Array<{ absolutePath: string; repoRelativePath: string }> = []
+        for (const arg of explicitFiles) {
+          const abs = path.resolve(arg)
+          if (fs.statSync(abs, { throwIfNoEntry: false })?.isDirectory()) {
+            const files = await glob(['**/*.ts', '**/*.tsx', '**/*.rb'], {
+              cwd: abs,
+              absolute: true,
+              ignore: ['**/node_modules/**', '**/dist/**'],
+            })
+            for (const f of files) {
+              expanded.push({ absolutePath: f, repoRelativePath: path.relative(repoRoot, f) })
+            }
+          } else {
+            expanded.push({ absolutePath: abs, repoRelativePath: arg })
+          }
+        }
+        relevant = expanded
+        label = `${relevant.length} file(s) in ${explicitFiles.join(', ')}`
       } else {
         const git = getChangedFiles(process.cwd(), from || undefined)
         repoRoot = git.repoRoot

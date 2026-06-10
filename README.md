@@ -158,11 +158,15 @@ Ignored automatically: `node_modules`, `dist`, `tmp`, `vendor`, `coverage`, `.gi
 Compares files against the index and reports clone groups. Behavior depends on the flags passed.
 
 ```bash
-dry check                          # uncommitted changes (staged + unstaged + untracked)
-dry check --all                    # all indexed files — full scan
-dry check --from=main              # all changes in current branch vs main
-dry check src/hooks/useMyHook.ts   # specific file(s)
+dry check                                   # uncommitted changes (staged + unstaged + untracked)
+dry check --all                             # all indexed files — full scan
+dry check --from=main                       # all changes in current branch vs main
+dry check src/hooks/useMyHook.ts            # specific file
+dry check src/hooks/                        # all files in a directory
+dry check src/hooks/ src/components/        # multiple directories and files
 ```
+
+When a path argument is a directory, `dry` globs all `.ts`, `.tsx`, and `.rb` files inside it automatically.
 
 Options:
 | Flag | Default | Description |
