@@ -311,6 +311,20 @@ tests/                  — vitest suite (core, parser, store, checker, CLI smok
 
 ---
 
+## Curiosity
+
+The name **surgex** comes from the Magic card **Surgical Extraction**.
+
+In the card, you choose one card in a graveyard, search that player's
+graveyard, hand, and library for the other cards with the same name, and exile
+all of them.
+
+That maps nicely to the project: `surgex` finds one duplicated code structure,
+surfaces the other matching copies across the codebase, and helps you remove or
+extract them decisively instead of leaving scattered duplicates behind.
+
+---
+
 ## References
 
 - Schleimer, Wilkerson, Aiken. _Winnowing: Local Algorithms for Document Fingerprinting_. SIGMOD 2003.
