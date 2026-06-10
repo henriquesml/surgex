@@ -1,5 +1,16 @@
-import { describe, it, expect } from 'vitest'
-import { parseSource } from '../src/lang/parser'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import * as fs from 'fs'
+import * as os from 'os'
+import * as path from 'path'
+import { parseSource, parseFile } from '../src/lang/parser'
+
+let tmp: string
+beforeEach(() => {
+  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'surgex-parser-'))
+})
+afterEach(() => {
+  fs.rmSync(tmp, { recursive: true, force: true })
+})
 
 function names(source: string, file: string) {
   return parseSource(source, file).map(u => `${u.name}:${u.type}`)
@@ -54,10 +65,32 @@ describe('parseSource — TypeScript', () => {
     expect(names('export default () => { return 1 }', 'a.ts')).toContain('default:arrow')
   })
 
-  it('does not produce duplicate units for the same node', () => {
-    const src = 'export default function foo() { return 1 }'
-    const got = names(src, 'a.ts').filter(n => n.startsWith('foo') || n.startsWith('default'))
-    expect(got).toHaveLength(1)
+  it('does not produce duplicate units for the same key', () => {
+    const src = 'const api = { save: () => 1, save: () => 2 }'
+    expect(names(src, 'a.ts')).toEqual(['save:arrow'])
+  })
+
+  it('ignores variable declarators whose value is not a function', () => {
+    expect(names('const foo = memo(,)', 'a.ts')).toEqual([])
+  })
+
+  it('ignores declarations with no function value to unwrap', () => {
+    expect(names('const foo', 'a.ts')).toEqual([])
+  })
+
+  it('ignores malformed method, field and pair entries without usable names', () => {
+    const src = [
+      'class Foo {',
+      '  () { return 1 }',
+      '  = () => 2',
+      '}',
+      'const obj = { : () => 3 }',
+    ].join('\n')
+    expect(names(src, 'a.ts')).toEqual(['Foo:class'])
+  })
+
+  it('ignores anonymous class expressions outside class declarations', () => {
+    expect(names('export default class {}', 'a.ts')).toEqual([])
   })
 })
 
@@ -78,6 +111,18 @@ describe('parseSource — Ruby', () => {
     expect(got).toContain('bar:method')
     expect(got).toContain('baz:method')
   })
+
+  it('ignores malformed Ruby units without names', () => {
+    const src = ['class ; end', 'def self.; end'].join('\n')
+    expect(names(src, 'a.rb')).toEqual([])
+  })
+})
+
+describe('parseSource — error handling', () => {
+  it('returns [] when the source causes a parse exception', () => {
+    // Passing a Buffer object as source triggers a runtime error in tree-sitter
+    expect(parseSource(null as unknown as string, 'a.ts')).toEqual([])
+  })
 })
 
 describe('parseSource — normalization', () => {
@@ -95,5 +140,18 @@ describe('parseSource — normalization', () => {
 
   it('returns [] for unsupported extensions', () => {
     expect(parseSource('function foo() {}', 'a.py')).toEqual([])
+  })
+})
+
+describe('parseFile', () => {
+  it('parses a real file from disk', () => {
+    const file = path.join(tmp, 'f.ts')
+    fs.writeFileSync(file, 'function hello() { return 1 }')
+    const units = parseFile(file)
+    expect(units.map(u => u.name)).toContain('hello')
+  })
+
+  it('returns [] when the file does not exist', () => {
+    expect(parseFile(path.join(tmp, 'missing.ts'))).toEqual([])
   })
 })

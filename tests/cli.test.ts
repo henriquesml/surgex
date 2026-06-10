@@ -71,6 +71,39 @@ describe('surgex CLI', () => {
     expect(stdout).toContain('useSuppliers')
   })
 
+  it('indexes the current directory by default when run from a nested directory', () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'surgex-cli-repo-'))
+    try {
+      fs.mkdirSync(path.join(repo, '.git'))
+      fs.mkdirSync(path.join(repo, 'src'), { recursive: true })
+      fs.mkdirSync(path.join(repo, 'apps/web/deep'), { recursive: true })
+      fs.writeFileSync(path.join(repo, 'src/a.ts'), CLONE_A)
+      fs.writeFileSync(path.join(repo, 'src/b.ts'), CLONE_A.replace(/useProducts/g, 'useSuppliers'))
+      fs.writeFileSync(
+        path.join(repo, 'apps/web/deep/local.ts'),
+        CLONE_A.replace(/useProducts/g, 'useAccounting'),
+      )
+
+      const nested = path.join(repo, 'apps/web/deep')
+      const indexRun = run(['index'], nested)
+      expect(indexRun.status).toBe(0)
+      expect(indexRun.stdout).toContain(`Indexing: ${fs.realpathSync(nested)}`)
+      expect(fs.existsSync(path.join(repo, '.surgex/index.json'))).toBe(true)
+      expect(fs.existsSync(path.join(nested, '.surgex'))).toBe(false)
+
+      const indexData = JSON.parse(fs.readFileSync(path.join(repo, '.surgex/index.json'), 'utf8')) as {
+        files: Record<string, unknown>
+        units: Array<{ file: string; name: string }>
+      }
+
+      expect(Object.keys(indexData.files)).toEqual(['apps/web/deep/local.ts'])
+      expect(indexData.units.map(unit => unit.file)).toEqual(['apps/web/deep/local.ts'])
+      expect(indexData.units.map(unit => unit.name)).toContain('useAccounting')
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   it('emits machine-readable output with --json', () => {
     const { stdout, status } = run(['check', '--all', '--json'], tmp)
     expect(status).toBe(0)

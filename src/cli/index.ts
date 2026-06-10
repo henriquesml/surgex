@@ -60,10 +60,10 @@ async function runIndex(args: string[]): Promise<void> {
   const force = args.includes('--force')
   const kGramSize = parseNumberFlag(args, '--kgram=', DEFAULT_PARAMS.k, { min: 2, max: 50 })
   const windowSize = parseNumberFlag(args, '--window=', DEFAULT_PARAMS.w, { min: 1, max: 50 })
+  const store = Store.discover()
   const paths = targetPaths.length ? targetPaths : [process.cwd()]
 
   console.log(`Indexing: ${paths.join(', ')}`)
-  const store = Store.discover()
   const stats = await indexPaths(paths, store, {
     verbose,
     params: { k: kGramSize, w: windowSize },

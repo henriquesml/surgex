@@ -2,6 +2,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { DEFAULT_PARAMS, type FingerprintParams } from '../core/fingerprint'
 import { UsageError } from '../errors'
+import { findRepoRoot } from './git'
 import type { CodeUnit } from '../types'
 
 export interface StoredUnit extends Omit<CodeUnit, 'id'> {
@@ -52,20 +53,22 @@ export class Store {
   }
 
   // Finds the nearest `.surgex/` by walking up from `cwd`, like git finds `.git/`.
-  // The walk stops at the git repository root (an index above the repo you are
-  // working in is almost certainly someone else's). Falls back to
-  // `<cwd>/.surgex` when none exists yet.
+  // Inside a git repo, the store is always anchored at the repository root so
+  // nested stale indexes are ignored. Outside a git repo, it finds the nearest
+  // `.surgex/` walking up from `cwd` and otherwise falls back to `<cwd>/.surgex`.
   static discover(cwd: string = process.cwd()): Store {
-    let currentDir = cwd
+    const resolvedCwd = realpathOrSelf(cwd)
+    const repoRoot = realpathOrNull(findRepoRoot(resolvedCwd) ?? findRepoRootByWalking(resolvedCwd))
+    if (repoRoot) return new Store(path.join(repoRoot, '.surgex'))
+
+    let currentDir = resolvedCwd
     while (true) {
       const candidate = path.join(currentDir, '.surgex')
       if (fs.existsSync(candidate)) return new Store(candidate)
-      if (fs.existsSync(path.join(currentDir, '.git'))) break // repo root reached
       const parentDir = path.dirname(currentDir)
-      if (parentDir === currentDir) break // reached filesystem root
+      if (parentDir === currentDir) return new Store(path.join(resolvedCwd, '.surgex'))
       currentDir = parentDir
     }
-    return new Store(path.join(cwd, '.surgex'))
   }
 
   exists(): boolean {
@@ -166,6 +169,28 @@ export class Store {
   count(): number {
     return this.read().units.length
   }
+}
+
+function findRepoRootByWalking(cwd: string): string | null {
+  let currentDir = cwd
+  while (true) {
+    if (fs.existsSync(path.join(currentDir, '.git'))) return currentDir
+    const parentDir = path.dirname(currentDir)
+    if (parentDir === currentDir) return null
+    currentDir = parentDir
+  }
+}
+
+function realpathOrSelf(target: string): string {
+  try {
+    return fs.realpathSync(target)
+  } catch {
+    return target
+  }
+}
+
+function realpathOrNull(target: string | null): string | null {
+  return target ? realpathOrSelf(target) : null
 }
 
 function validateIndex(raw: unknown, indexPath: string): IndexData {

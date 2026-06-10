@@ -31,15 +31,12 @@ const FUNCTION_TYPES = new Set(['arrow_function', 'function_expression', 'functi
 // Unwraps wrapper calls like `memo(fn)`, `forwardRef(fn)`, `memo(forwardRef(fn))`
 // down to the inner function node, so wrapped React components are indexed too.
 function unwrapFunction(node: SyntaxNode | null): SyntaxNode | null {
-  if (!node) return null
-  if (FUNCTION_TYPES.has(node.type)) return node
-  if (node.type === 'call_expression') {
-    const args = node.childForFieldName('arguments')
-    if (!args) return null
-    for (const arg of args.namedChildren) {
-      const inner = unwrapFunction(arg)
-      if (inner) return inner
-    }
+  if (node && FUNCTION_TYPES.has(node.type)) return node
+  if (node?.type !== 'call_expression') return null
+  const args = node.childForFieldName('arguments') as SyntaxNode
+  for (const arg of args.namedChildren) {
+    const inner = unwrapFunction(arg)
+    if (inner) return inner
   }
   return null
 }
@@ -50,40 +47,36 @@ function extractTypeScriptUnits(root: SyntaxNode): RawUnit[] {
   function walk(node: SyntaxNode) {
     switch (node.type) {
       case 'function_declaration': {
-        const name = node.childForFieldName('name')
-        // `export default function () {}` has no name
-        units.push({ name: name?.text ?? 'default', type: 'function', node })
+        units.push({ name: node.childForFieldName('name')!.text, type: 'function', node })
         break
       }
       case 'method_definition': {
-        const name = node.childForFieldName('name')
-        if (name) units.push({ name: name.text, type: 'method', node })
+        const name = node.childForFieldName('name')?.text
+        if (name) units.push({ name, type: 'method', node })
         break
       }
       case 'class_declaration': {
-        const name = node.childForFieldName('name')
-        if (name) units.push({ name: name.text, type: 'class', node })
+        units.push({ name: node.childForFieldName('name')!.text, type: 'class', node })
         break
       }
       case 'variable_declarator': {
-        const name = node.childForFieldName('name')
+        const name = node.childForFieldName('name')?.text
         const functionNode = unwrapFunction(node.childForFieldName('value'))
-        if (name && functionNode) units.push({ name: name.text, type: 'arrow', node: functionNode })
+        if (name && functionNode) units.push({ name, type: 'arrow', node: functionNode })
         break
       }
       // Class property arrows: `handleClick = () => {...}`
       case 'public_field_definition': {
-        const name = node.childForFieldName('name')
+        const name = node.childForFieldName('name')?.text
         const functionNode = unwrapFunction(node.childForFieldName('value'))
-        if (name && functionNode)
-          units.push({ name: name.text, type: 'method', node: functionNode })
+        if (name && functionNode) units.push({ name, type: 'method', node: functionNode })
         break
       }
       // Object literal entries: `{ fetchAll: () => {...} }`
       case 'pair': {
-        const key = node.childForFieldName('key')
+        const key = node.childForFieldName('key')?.text
         const functionNode = unwrapFunction(node.childForFieldName('value'))
-        if (key && functionNode) units.push({ name: key.text, type: 'arrow', node: functionNode })
+        if (key && functionNode) units.push({ name: key, type: 'arrow', node: functionNode })
         break
       }
       // `export default () => {}` / `export default function () {}` (function
@@ -110,11 +103,11 @@ function extractRubyUnits(root: SyntaxNode): RawUnit[] {
 
   function walk(node: SyntaxNode) {
     if (node.type === 'method' || node.type === 'singleton_method') {
-      const name = node.childForFieldName('name')
-      if (name) units.push({ name: name.text, type: 'method', node })
+      const name = node.childForFieldName('name')?.text
+      if (name) units.push({ name, type: 'method', node })
     } else if (node.type === 'class') {
-      const name = node.childForFieldName('name')
-      if (name) units.push({ name: name.text, type: 'class', node })
+      const name = node.childForFieldName('name')?.text
+      if (name) units.push({ name, type: 'class', node })
     }
 
     for (const child of node.children) walk(child)
