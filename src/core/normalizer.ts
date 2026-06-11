@@ -4,18 +4,25 @@ import type { SyntaxNode } from 'tree-sitter'
 // Structural tokens (keywords, operators, brackets) are kept as-is —
 // they encode the shape of the code, which is exactly what we want to compare.
 const IDENTIFIER_TYPES = new Set([
-  'identifier', 'property_identifier', 'shorthand_property_identifier',
-  'type_identifier', 'constant', 'self', 'super',
+  'identifier',
+  'property_identifier',
+  'shorthand_property_identifier',
+  'type_identifier',
+  'constant',
+  'self',
+  'super',
 ])
 
 const STRING_TYPES = new Set([
-  'string', 'template_string', 'string_literal', 'string_content',
-  'heredoc_body', 'heredoc_beginning',
+  'string',
+  'template_string',
+  'string_literal',
+  'string_content',
+  'heredoc_body',
+  'heredoc_beginning',
 ])
 
-const NUMBER_TYPES = new Set([
-  'number', 'integer', 'float', 'complex', 'rational',
-])
+const NUMBER_TYPES = new Set(['number', 'integer', 'float', 'complex', 'rational'])
 
 export function normalizeNode(node: SyntaxNode): string[] {
   // Collapse entire string subtrees (e.g. template strings with interpolation)

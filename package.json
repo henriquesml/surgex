@@ -1,15 +1,53 @@
 {
   "name": "surgex",
   "version": "0.1.0",
-  "description": "Deterministic code clone detector — finds componentization opportunities",
+  "description": "Deterministic code clone detector — finds componentization opportunities. No LLM, no embeddings, fully reproducible.",
+  "license": "MIT",
+  "author": "henriquesml",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/henriquesml/surgex.git"
+  },
+  "bugs": {
+    "url": "https://github.com/henriquesml/surgex/issues"
+  },
+  "homepage": "https://github.com/henriquesml/surgex#readme",
+  "keywords": [
+    "clone-detection",
+    "code-duplication",
+    "winnowing",
+    "tree-sitter",
+    "static-analysis",
+    "refactoring",
+    "typescript",
+    "ruby",
+    "cli"
+  ],
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "bin": { "surgex": "dist/cli.js" },
+  "bin": {
+    "surgex": "dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc",
-    "dev": "ts-node src/cli.ts",
-    "index": "ts-node src/cli.ts index",
-    "report": "ts-node src/cli.ts report"
+    "dev": "ts-node src/cli/index.ts",
+    "index": "ts-node src/cli/index.ts index",
+    "report": "ts-node src/cli/index.ts report",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "glob": "^10.4.5",
@@ -18,8 +56,14 @@
     "tree-sitter-typescript": "^0.21.2"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^22.19.20",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "@vitest/coverage-v8": "^4.1.8",
+    "eslint": "^8.57.0",
+    "prettier": "^3.3.3",
     "ts-node": "^10.9.2",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vitest": "^4.1.8"
   }
 }

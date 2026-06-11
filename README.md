@@ -1,6 +1,5 @@
 <img width="100%"  alt="image" src="https://github.com/user-attachments/assets/1f55b27f-3a1e-411c-997b-8102deea610f" />
 
-
 Deterministic code clone detector. Finds functions, methods, and components that are structurally identical or very similar — candidates for extraction and componentization.
 
 No LLM. No embeddings. No external services. Every result is reproducible.
@@ -24,13 +23,14 @@ Two commands:
 
 Source files are parsed with [tree-sitter](https://tree-sitter.github.io/tree-sitter/), a fast incremental parser that produces a concrete syntax tree. Supported languages: **TypeScript**, **TSX**, **Ruby**.
 
-The parser walks the AST and extracts *code units*: `function_declaration`, `method_definition`, `arrow_function` (when assigned to a `const`), and `class` nodes.
+The parser walks the AST and extracts _code units_: `function_declaration`, `method_definition`, `arrow_function` (when assigned to a `const`), and `class` nodes.
 
 ### 2. Normalization — Type-2 clone detection
 
 Raw source tokens are normalized before any comparison. This enables detecting **Type-2 clones**: code that is structurally identical but uses different names.
 
 The normalization rules:
+
 - All identifiers (`userId`, `productId`, `token`) → `ID`
 - All string literals (`"hello"`, `` `template` ``) → `STR`
 - All numeric literals (`42`, `3.14`) → `NUM`
@@ -39,6 +39,7 @@ The normalization rules:
 This means two functions that do the same thing with different variable names produce the same normalized token sequence — and the same fingerprint.
 
 Example:
+
 ```ts
 // useProducts.ts
 const [products, setProducts] = useState<Product[]>([])
@@ -50,6 +51,7 @@ apiClient.getCategories(token)
 ```
 
 After normalization, both lines become:
+
 ```
 const [ ID , ID ] = ID < ID > ( [ ] )
 ID . ID ( ID )
@@ -59,7 +61,7 @@ ID . ID ( ID )
 
 Each normalized token sequence is fingerprinted using the **Winnowing algorithm** (Schleimer, Wilkerson, Aiken — SIGMOD 2003), the same technique used by Stanford's MOSS plagiarism detector.
 
-The algorithm guarantees: *any shared token subsequence of length ≥ K will be detected*.
+The algorithm guarantees: _any shared token subsequence of length ≥ K will be detected_.
 
 Steps:
 
@@ -69,9 +71,13 @@ Steps:
 
 The selected minimums form a set — the unit's fingerprint. Two units that share code share fingerprint hashes.
 
-Parameters used:
+Default parameters (tunable via `surgex index --kgram=N --window=N`):
+
 - `K = 5` (minimum match length in tokens)
 - `W = 4` (window size; controls fingerprint density)
+
+The parameters are stored in the index and reused by `check`, so fingerprints
+always match the index they are compared against.
 
 ### 4. Similarity — Jaccard coefficient
 
@@ -94,18 +100,18 @@ Comparing all pairs of N units naively is O(N²). For large codebases this is sl
 `surgex` avoids it with a hash-bucket pre-filter:
 
 1. Build a map: `hash → [unit indices]`
-2. Any two units that share at least one fingerprint hash are *candidate pairs*
+2. Any two units that share at least one fingerprint hash are _candidate pairs_
 3. Compute Jaccard only for candidate pairs
 
 In practice, only a small fraction of all possible pairs share any hash, so the actual number of Jaccard computations is much closer to O(N) than O(N²).
 
 ### 6. Clone grouping — Union-Find
 
-Clone pairs are often transitive: if A is similar to B and B is similar to C, all three belong to the same group. `surgex` clusters them with a **Union-Find** (disjoint set) data structure, producing clone *groups* rather than a flat list of pairs.
+Clone pairs are often transitive: if A is similar to B and B is similar to C, all three belong to the same group. `surgex` clusters them with a **Union-Find** (disjoint set) data structure, producing clone _groups_ rather than a flat list of pairs.
 
-### 7. Visual diff — LCS on normalized lines
+### 7. Structural match view — LCS on normalized lines
 
-With `--show-code`, `surgex` shows both code blocks side by side with each structurally duplicated line marked with `≡`.
+With `--show-code`, `surgex` shows both code blocks side by side with each structurally matched line marked with `≡`.
 
 The matching is done with **Longest Common Subsequence (LCS)** on normalized lines: each line is independently normalized (same identifier → `ID` substitution), and the LCS of these normalized sequences identifies which lines are structurally identical across the two functions.
 
@@ -115,14 +121,16 @@ The matching is done with **Longest Common Subsequence (LCS)** on normalized lin
 
 The index is stored at `.surgex/index.json` relative to the directory where `surgex index` was run. It persists between runs — `surgex check` reads it without re-indexing.
 
-When `surgex` is invoked from a subdirectory, it walks up the directory tree to find the nearest `.surgex/` folder, similar to how `git` finds `.git/`.
+File paths are stored relative to the project root, so the index keeps working when the project is moved or checked out on another machine (e.g. CI).
+
+When `surgex` is invoked from a subdirectory, it walks up the directory tree to find the nearest `.surgex/` folder, similar to how `git` finds `.git/`. The walk stops at the git repository root.
 
 ---
 
 ## Installation
 
 ```bash
-git clone https://github.com/yourorg/surgex
+git clone https://github.com/henriquesml/surgex
 cd surgex
 npm install
 npm run build
@@ -132,7 +140,7 @@ npm link        # makes `surgex` available globally
 Or run directly without installing:
 
 ```bash
-npx ts-node /path/to/surgex/src/cli.ts <command>
+npx ts-node /path/to/surgex/src/cli/index.ts <command>
 ```
 
 ---
@@ -143,11 +151,15 @@ npx ts-node /path/to/surgex/src/cli.ts <command>
 
 Indexes all `.ts`, `.tsx`, and `.rb` files under the given paths. Saves the result to `.surgex/index.json` in the current directory.
 
+Indexing is **incremental**: each file's `mtime` and size are stored in the index, and on re-index only files that changed are re-parsed — unchanged files have their fingerprints carried over from the previous run. Deleted files drop out of the index automatically. The cache is bypassed when the Winnowing parameters change (old fingerprints would not match) or with `--force`.
+
 ```bash
 surgex index                          # index from current directory
 surgex index src/                     # index a specific path
 surgex index src/ lib/                # index multiple paths
-surgex index --verbose                # print each indexed file
+surgex index --verbose                # print each indexed file (parsed vs cached)
+surgex index --force                  # re-parse everything, ignoring the cache
+surgex index --kgram=7 --window=5     # tune Winnowing parameters
 ```
 
 Ignored automatically: `node_modules`, `dist`, `tmp`, `vendor`, `coverage`, `.git`, `spec/fixtures`.
@@ -176,7 +188,19 @@ Options:
 | `--from=ref` | — | Git ref to diff against (e.g. `main`, `HEAD~3`) |
 | `--threshold=N` | `0.75` | Minimum Jaccard similarity (0.0–1.0) |
 | `--min-tokens=N` | `20` | Ignore units with fewer normalized tokens |
-| `--show-code` | — | Show duplicated lines side by side |
+| `--show-code` | — | Show structural matches side by side |
+| `--json` | — | Machine-readable JSON output |
+| `--fail-on-found` | — | Exit with code 1 if clones are found (CI gate) |
+
+`check` also detects clones _within the checked files themselves_ — two
+identical new files added in the same branch are reported even though neither
+is in the index yet.
+
+Using as a CI gate:
+
+```bash
+surgex check --from=origin/main --fail-on-found --json > clones.json
+```
 
 Both commands show progress in real time:
 
@@ -189,11 +213,11 @@ Checking 127 file(s) [all indexed files]
 
 ## Clone types
 
-| Type | Condition | Description |
-|------|-----------|-------------|
-| Type-1 | similarity = 100%, same line count | Exact copy — only whitespace or comments differ |
-| Type-2 | similarity = 100%, different line count | Same structure, different names or types |
-| Type-3 | similarity < 100% | Similar structure with insertions or removals |
+| Type   | Condition                               | Description                                     |
+| ------ | --------------------------------------- | ----------------------------------------------- |
+| Type-1 | similarity = 100%, same line count      | Exact copy — only whitespace or comments differ |
+| Type-2 | similarity = 100%, different line count | Same structure, different names or types        |
+| Type-3 | similarity < 100%                       | Similar structure with insertions or removals   |
 
 Results are grouped by type so the most actionable duplicates appear first.
 
@@ -239,40 +263,70 @@ With `--show-code`:
       const { token } = useAuth()               ≡    const { token } = useAuth()
       const [items, setItems] = useState([])         const [list, setList] = useState([])
       const [error, setError] = useState(false) ≡    const [error, setError] = useState(false)
-                                                 ≡  
+                                                 ≡
       useEffect(() => {                          ≡    useEffect(() => {
         ...                                      ≡      ...
       }, [enabled, token])                       ≡    }, [enabled, token])
     }                                            ≡  }
     ──────────────────────────────────────────────────────────────────────
-    8 of 9 lines structurally duplicated (89%)
+    8 of 9 lines structurally matched (89%)
 ```
 
 ---
 
 ## Project structure
 
+The code is organized in layers; the dependency direction points inward, so
+`core/` never imports from the outer layers.
+
 ```
 src/
-  types.ts          — CodeUnit, ClonePair, CloneGroup interfaces
-  normalizer.ts     — AST node → normalized token sequence
-  fingerprinter.ts  — Winnowing algorithm + FNV-1a hash + Jaccard
-  parser.ts         — tree-sitter: extracts code units from TS and Ruby
-  store.ts          — JSON index persistence (.surgex/index.json)
-  detector.ts       — hash bucket filtering + Jaccard computation
-  reporter.ts       — Union-Find grouping + report formatting
-  indexer.ts        — glob + parse + save pipeline
-  checker.ts        — git-aware diff check + per-file insertion/modification split
-  git.ts            — git changed files, file-at-ref content
-  diff.ts           — LCS-based side-by-side visual diff
-  format.ts         — unified output formatter (shared by check and report paths)
-  cli.ts            — index / check commands
+  core/                 — pure algorithms, no I/O (deterministic in → out)
+    normalizer.ts       — AST node → normalized token sequence
+    fingerprint.ts      — Winnowing algorithm + FNV-1a hash + Jaccard
+    detector.ts         — hash bucket filtering + Jaccard computation
+    grouping.ts         — Union-Find clustering of clone pairs
+  lang/
+    parser.ts           — tree-sitter: extracts code units from TS and Ruby
+  io/                   — the boundary with the outside world
+    store.ts            — JSON index persistence (.surgex/index.json)
+    git.ts              — git changed files, file-at-ref content
+    source.ts           — reading source line ranges
+  pipeline/             — orchestration (core + lang + io)
+    indexer.ts          — glob + parse + save pipeline
+    checker.ts          — git-aware diff check + insertion/modification split
+  report/               — presentation
+    format.ts           — unified output formatter
+    report.ts           — builds display groups for check and report paths
+    structural-match-view.ts
+                        — LCS-based side-by-side structural match view
+  cli/
+    index.ts            — index / check command dispatch
+    help.ts             — usage text
+  types.ts              — CodeUnit, ClonePair, CloneGroup interfaces
+  errors.ts             — UsageError (expected, user-facing errors)
+  index.ts              — public library API
+tests/                  — vitest suite (core, parser, store, checker, CLI smoke)
 ```
+
+---
+
+## Curiosity
+
+The name **surgex** comes from the Magic card **Surgical Extraction**.
+
+In the card, you choose one card in a graveyard, search that player's
+graveyard, hand, and library for the other cards with the same name, and exile
+all of them.
+
+That maps nicely to the project: `surgex` finds one duplicated code structure,
+surfaces the other matching copies across the codebase, and helps you remove or
+extract them decisively instead of leaving scattered duplicates behind.
 
 ---
 
 ## References
 
-- Schleimer, Wilkerson, Aiken. *Winnowing: Local Algorithms for Document Fingerprinting*. SIGMOD 2003.
+- Schleimer, Wilkerson, Aiken. _Winnowing: Local Algorithms for Document Fingerprinting_. SIGMOD 2003.
 - tree-sitter. [https://tree-sitter.github.io](https://tree-sitter.github.io)
-- Clone taxonomy (Type 1–4): Roy, Cordy, Koschke. *Comparison and Evaluation of Code Clone Detection Techniques*. 2009.
+- Clone taxonomy (Type 1–4): Roy, Cordy, Koschke. _Comparison and Evaluation of Code Clone Detection Techniques_. 2009.
