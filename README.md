@@ -313,7 +313,7 @@ tests/                  — vitest suite (core, parser, store, checker, CLI smok
 
 ## Curiosity
 
-The name **surgex** comes from the Magic card **Surgical Extraction**.
+The name **surgex** comes from the Magic card [**Surgical Extraction**.](https://cards.scryfall.io/large/front/d/c/dca7e072-edb5-4f7e-bdec-a3a393053c80.jpg?1562882025)
 
 In the card, you choose one card in a graveyard, search that player's
 graveyard, hand, and library for the other cards with the same name, and exile
