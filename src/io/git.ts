@@ -19,6 +19,17 @@ function git(args: string[], cwd: string): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 }
 
+// A caller-supplied ref reaches git as part of a larger token (`<ref>...HEAD`,
+// `<ref>:<path>`). Even though execFileSync never invokes a shell, a ref like
+// `--output=/etc/passwd` is parsed by git itself as an *option*, not a revision
+// — argument injection. We reject refs that look like options and pass
+// `--end-of-options` at the call sites as a second line of defence.
+function assertSafeRef(ref: string): void {
+  if (ref.startsWith('-')) {
+    throw new UsageError(`Invalid git ref: ${ref} (must not start with "-")`)
+  }
+}
+
 function isGitRepo(dir: string): boolean {
   try {
     git(['rev-parse', '--git-dir'], dir)
@@ -59,8 +70,9 @@ export function getChangedFiles(cwd: string, from?: string): GitContext {
 
   const root = repoRoot(cwd)
 
+  if (from) assertSafeRef(from)
   const changed = from
-    ? listChanged(root, [`${from}...HEAD`])
+    ? listChanged(root, ['--end-of-options', `${from}...HEAD`])
     : [...listChanged(root, ['--cached']), ...listChanged(root, []), ...listUntracked(root)]
 
   const seenPaths = new Set<string>()
@@ -75,8 +87,9 @@ export function getChangedFiles(cwd: string, from?: string): GitContext {
 
 // Returns the content of a file at a given git ref, or null if it didn't exist
 export function fileAtRef(repoRoot: string, repoRelativePath: string, ref: string): string | null {
+  assertSafeRef(ref)
   try {
-    return execFileSync('git', ['show', `${ref}:${repoRelativePath}`], {
+    return execFileSync('git', ['show', '--end-of-options', `${ref}:${repoRelativePath}`], {
       cwd: repoRoot,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'], // suppress stderr

@@ -72,6 +72,19 @@ describe('getChangedFiles', () => {
     expect(names).toContain('untracked.ts')
   })
 
+  it('rejects a base ref that looks like a git option (argument injection)', () => {
+    initRepo(tmp)
+    fs.writeFileSync(path.join(tmp, 'a.ts'), 'const a = 1\n')
+    git(['add', 'a.ts'], tmp)
+    git(['commit', '-m', 'init'], tmp)
+
+    const sentinel = path.join(tmp, 'PWNED')
+    expect(() => getChangedFiles(tmp, `--output=${sentinel}`)).toThrow(UsageError)
+    // git must never have executed the injected --output flag
+    expect(fs.existsSync(sentinel)).toBe(false)
+    expect(fs.existsSync(`${sentinel}...HEAD`)).toBe(false)
+  })
+
   it('returns files changed since a base ref', () => {
     initRepo(tmp)
 
@@ -127,5 +140,10 @@ describe('fileAtRef', () => {
     git(['commit', '-m', 'init'], tmp)
 
     expect(fileAtRef(tmp, 'nonexistent.ts', 'HEAD')).toBeNull()
+  })
+
+  it('rejects a ref that looks like a git option (argument injection)', () => {
+    initRepo(tmp)
+    expect(() => fileAtRef(tmp, 'a.ts', '--output=x')).toThrow(UsageError)
   })
 })
