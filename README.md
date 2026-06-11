@@ -36,25 +36,34 @@ The normalization rules:
 - All numeric literals (`42`, `3.14`) → `NUM`
 - All structural tokens (keywords, operators, brackets) are kept as-is
 
-This means two functions that do the same thing with different variable names produce the same normalized token sequence — and the same fingerprint.
+This means two functions with the same control flow and rules, but different domain names, produce the same normalized token sequence — and the same fingerprint.
 
 Example:
 
 ```ts
-// useProducts.ts
-const [products, setProducts] = useState<Product[]>([])
-apiClient.getProducts(token)
+// permissions/project.ts
+export function canEditProject(user: User, project: Project) {
+  if (!user.isActive) return false
+  if (user.role !== "admin" && project.ownerId !== user.id) return false
+  return project.status !== "archived"
+}
 
-// useCategories.ts
-const [categories, setCategories] = useState<Category[]>([])
-apiClient.getCategories(token)
+// permissions/invoice.ts
+export function canEditInvoice(user: User, invoice: Invoice) {
+  if (!user.isActive) return false
+  if (user.role !== "admin" && invoice.ownerId !== user.id) return false
+  return invoice.status !== "archived"
+}
 ```
 
-After normalization, both lines become:
+After normalization, both functions become:
 
 ```
-const [ ID , ID ] = ID < ID > ( [ ] )
-ID . ID ( ID )
+export function ID ( ID : ID , ID : ID ) {
+if ( ! ID . ID ) return false
+if ( ID . ID !== STR && ID . ID !== ID . ID ) return false
+return ID . ID !== STR
+}
 ```
 
 ### 3. Fingerprinting — Winnowing
