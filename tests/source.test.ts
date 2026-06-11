@@ -30,4 +30,23 @@ describe('readLines', () => {
   it('returns [] for a file that does not exist', () => {
     expect(readLines(path.join(tmp, 'missing.ts'), 1, 5)).toEqual([])
   })
+
+  it('serves repeated reads of the same file from cache', () => {
+    const file = path.join(tmp, 'cache.ts')
+    fs.writeFileSync(file, 'a\nb\nc\n')
+    expect(readLines(file, 1, 1)).toEqual(['a'])
+    // second read hits the cache (same mtime) and returns a different range
+    expect(readLines(file, 2, 3)).toEqual(['b', 'c'])
+  })
+
+  it('re-reads when the file changes (mtime invalidates the cache)', () => {
+    const file = path.join(tmp, 'changing.ts')
+    fs.writeFileSync(file, 'old\n')
+    expect(readLines(file, 1, 1)).toEqual(['old'])
+    // bump mtime into the future so the cached entry is considered stale
+    const future = new Date(Date.now() + 10_000)
+    fs.writeFileSync(file, 'new\n')
+    fs.utimesSync(file, future, future)
+    expect(readLines(file, 1, 1)).toEqual(['new'])
+  })
 })
