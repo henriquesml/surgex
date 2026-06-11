@@ -8,7 +8,7 @@ import { detectClones } from '../core/detector'
 import { groupClones } from '../core/grouping'
 import { DEFAULT_PARAMS } from '../core/fingerprint'
 import { formatReport, formatCheckReport, countFindings } from '../report/report'
-import { getChangedFiles } from '../io/git'
+import { getChangedFiles, findRepoRoot } from '../io/git'
 import { Store } from '../io/store'
 import { UsageError } from '../errors'
 import { HELP } from './help'
@@ -108,7 +108,9 @@ async function runCheck(args: string[]): Promise<void> {
   let label: string
 
   if (explicitFiles.length > 0) {
-    repoRoot = process.cwd()
+    // Anchor at the repo root so relative paths in the report match those used
+    // for git-derived changes; fall back to cwd outside a repo.
+    repoRoot = findRepoRoot(process.cwd()) ?? process.cwd()
     const expandedFiles: Array<{ absolutePath: string; repoRelativePath: string }> = []
     for (const arg of explicitFiles) {
       const absolutePath = path.resolve(arg)
@@ -125,7 +127,10 @@ async function runCheck(args: string[]): Promise<void> {
           })
         }
       } else {
-        expandedFiles.push({ absolutePath, repoRelativePath: arg })
+        expandedFiles.push({
+          absolutePath,
+          repoRelativePath: path.relative(repoRoot, absolutePath),
+        })
       }
     }
     relevant = expandedFiles

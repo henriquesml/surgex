@@ -3,7 +3,7 @@ import type { ClonePair, CodeUnit } from '../types'
 
 // Hashes shared by more than this many units are structural noise (like stop words).
 // Skipping them avoids O(N²) explosion on patterns like `const { ID } = ID()`.
-const MAX_UNITS_PER_HASH = 50
+export const MAX_UNITS_PER_HASH = 50
 
 export interface DetectOptions {
   threshold?: number
@@ -40,10 +40,12 @@ export function detectClones(units: CodeUnit[], options: DetectOptions = {}): Cl
     }
   }
 
-  // Phase 2: collect candidate pairs (skip hashes shared by too many units to be meaningful)
-  const seenPairKeys = new Set<number>()
+  // Phase 2: collect candidate pairs (skip hashes shared by too many units to be meaningful).
+  // Dedup with a per-row Set of partners (indices in each bucket are ascending,
+  // so indexA < indexB holds); this avoids the `indexA * unitCount + indexB`
+  // key, which could collide past ~94M units (Number.MAX_SAFE_INTEGER).
+  const partnersByIndex = new Map<number, Set<number>>()
   const candidatePairs: Array<[number, number]> = []
-  const unitCount = units.length
 
   for (const unitIndices of unitIndicesByHash.values()) {
     if (unitIndices.length > MAX_UNITS_PER_HASH) continue
@@ -51,9 +53,13 @@ export function detectClones(units: CodeUnit[], options: DetectOptions = {}): Cl
       for (let j = i + 1; j < unitIndices.length; j++) {
         const indexA = unitIndices[i],
           indexB = unitIndices[j]
-        const pairKey = indexA * unitCount + indexB
-        if (!seenPairKeys.has(pairKey)) {
-          seenPairKeys.add(pairKey)
+        let partners = partnersByIndex.get(indexA)
+        if (!partners) {
+          partners = new Set<number>()
+          partnersByIndex.set(indexA, partners)
+        }
+        if (!partners.has(indexB)) {
+          partners.add(indexB)
           candidatePairs.push([indexA, indexB])
         }
       }

@@ -28,7 +28,10 @@ interface IndexData {
   units: StoredUnit[]
 }
 
-const INDEX_VERSION = 2
+// Bumped to 3 when symbol/identifier normalization changed (Ruby instance
+// variables and symbols, TS destructuring shorthand): fingerprints from older
+// indexes no longer match, so they are rejected and a re-index is required.
+const INDEX_VERSION = 3
 
 // Persists the fingerprint index to <dir>/index.json.
 //
@@ -93,7 +96,16 @@ export class Store {
 
   private write(data: IndexData): void {
     fs.mkdirSync(this.dir, { recursive: true })
-    fs.writeFileSync(this.indexPath, JSON.stringify(data))
+    // Write to a temp file and rename: rename is atomic on the same filesystem,
+    // so an interrupted write (Ctrl-C, OOM) can never leave a truncated index.
+    const tmpPath = `${this.indexPath}.${process.pid}.tmp`
+    try {
+      fs.writeFileSync(tmpPath, JSON.stringify(data))
+      fs.renameSync(tmpPath, this.indexPath)
+    } catch (error) {
+      fs.rmSync(tmpPath, { force: true }) // best-effort cleanup; force never throws if absent
+      throw error
+    }
     this.cache = data
   }
 

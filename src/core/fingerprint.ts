@@ -44,7 +44,13 @@ export function fingerprint(
   params: FingerprintParams = DEFAULT_PARAMS,
 ): number[] {
   const { k: kGramSize, w: windowSize } = params
-  if (tokens.length < kGramSize) return tokens.map(hashFnv1a)
+  // Too short to form a k-gram: fingerprint the whole token sequence as one
+  // gram so identical short units still match (and differing ones still don't),
+  // rather than emitting one hash per token — which produced spurious partial
+  // overlaps between unrelated short units.
+  if (tokens.length < kGramSize) {
+    return tokens.length > 0 ? [hashFnv1a(tokens.join('\0'))] : []
+  }
   const kGrams = buildKGrams(tokens, kGramSize)
   const hashes = kGrams.map(hashFnv1a)
   if (hashes.length < windowSize) return hashes

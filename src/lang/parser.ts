@@ -6,19 +6,41 @@ import { fingerprint, DEFAULT_PARAMS, type FingerprintParams } from '../core/fin
 import type { CodeUnit, Language, UnitType } from '../types'
 
 // tree-sitter grammars ship as native CommonJS modules without type declarations.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { typescript: TypeScriptGrammar, tsx: TsxGrammar } = require('tree-sitter-typescript')
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const RubyGrammar = require('tree-sitter-ruby')
+// They are loaded lazily so that consumers of the pure fingerprint/jaccard API
+// don't pay the cost of loading native grammars they'll never use.
+let tsParserInstance: Parser | null = null
+let tsxParserInstance: Parser | null = null
+let rubyParserInstance: Parser | null = null
 
-const tsParser = new Parser()
-tsParser.setLanguage(TypeScriptGrammar)
+function tsParser(): Parser {
+  if (!tsParserInstance) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { typescript } = require('tree-sitter-typescript')
+    tsParserInstance = new Parser()
+    tsParserInstance.setLanguage(typescript)
+  }
+  return tsParserInstance
+}
 
-const tsxParser = new Parser()
-tsxParser.setLanguage(TsxGrammar)
+function tsxParser(): Parser {
+  if (!tsxParserInstance) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { tsx } = require('tree-sitter-typescript')
+    tsxParserInstance = new Parser()
+    tsxParserInstance.setLanguage(tsx)
+  }
+  return tsxParserInstance
+}
 
-const rubyParser = new Parser()
-rubyParser.setLanguage(RubyGrammar)
+function rubyParser(): Parser {
+  if (!rubyParserInstance) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const RubyGrammar = require('tree-sitter-ruby')
+    rubyParserInstance = new Parser()
+    rubyParserInstance.setLanguage(RubyGrammar)
+  }
+  return rubyParserInstance
+}
 
 interface RawUnit {
   name: string
@@ -130,15 +152,15 @@ export function parseSource(
 
   try {
     if (extension === 'tsx') {
-      tree = tsxParser.parse(source)
+      tree = tsxParser().parse(source)
       language = 'typescript'
       rawUnits = extractTypeScriptUnits(tree.rootNode)
     } else if (extension === 'ts') {
-      tree = tsParser.parse(source)
+      tree = tsParser().parse(source)
       language = 'typescript'
       rawUnits = extractTypeScriptUnits(tree.rootNode)
     } else if (extension === 'rb') {
-      tree = rubyParser.parse(source)
+      tree = rubyParser().parse(source)
       language = 'ruby'
       rawUnits = extractRubyUnits(tree.rootNode)
     } else {

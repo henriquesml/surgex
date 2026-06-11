@@ -48,6 +48,12 @@ describe('parseSource — TypeScript', () => {
     expect(got).toContain('Baz:arrow')
   })
 
+  it('reuses the lazily-initialized tsx parser across calls', () => {
+    // first call initializes the tsx parser, second reuses the cached instance
+    expect(names('const A = () => null', 'a.tsx')).toContain('A:arrow')
+    expect(names('const B = () => null', 'b.tsx')).toContain('B:arrow')
+  })
+
   it('extracts class property arrows', () => {
     const src = 'class Foo { handleClick = () => { return 1 } }'
     expect(names(src, 'a.ts')).toContain('handleClick:method')
@@ -126,6 +132,8 @@ describe('parseSource — error handling', () => {
 })
 
 describe('parseSource — normalization', () => {
+  const fp = (src: string, file: string) => parseSource(src, file)[0].fingerprint
+
   it('gives identical fingerprints to renamed but identical functions', () => {
     const a = parseSource(
       'function useProducts(token) { const items = fetch(token); return items }',
@@ -136,6 +144,29 @@ describe('parseSource — normalization', () => {
       'b.ts',
     )[0]
     expect(a.fingerprint).toEqual(b.fingerprint)
+  })
+
+  it('normalizes TS destructuring shorthand names (Type-2)', () => {
+    const a = fp('function useA() { const { token } = useAuth(); return token }', 'a.ts')
+    const b = fp('function useB() { const { credential } = useAuth(); return credential }', 'b.ts')
+    expect(a).toEqual(b)
+  })
+
+  it('normalizes Ruby instance variables (Type-2)', () => {
+    const a = fp(['def a', '  @user = fetch', '  @user.id', 'end'].join('\n'), 'a.rb')
+    const b = fp(['def b', '  @account = fetch', '  @account.id', 'end'].join('\n'), 'b.rb')
+    expect(a).toEqual(b)
+  })
+
+  it('normalizes Ruby symbols, keeping them distinct from variables', () => {
+    const a = fp(['def a', '  fetch(:user_key)', '  load(:user_key)', 'end'].join('\n'), 'a.rb')
+    const b = fp(['def b', '  fetch(:acct_key)', '  load(:acct_key)', 'end'].join('\n'), 'b.rb')
+    expect(a).toEqual(b)
+
+    // a symbol literal must not collapse onto a bare variable reference
+    const sym = fp(['def a', '  fetch(:thing)', '  log(:thing)', 'end'].join('\n'), 'c.rb')
+    const ref = fp(['def b', '  fetch(thing)', '  log(thing)', 'end'].join('\n'), 'd.rb')
+    expect(sym).not.toEqual(ref)
   })
 
   it('returns [] for unsupported extensions', () => {

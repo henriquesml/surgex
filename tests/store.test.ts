@@ -73,7 +73,7 @@ describe('Store', () => {
     fs.mkdirSync(path.join(tmp, '.surgex'))
     fs.writeFileSync(
       path.join(tmp, '.surgex/index.json'),
-      JSON.stringify({ version: 2, params: { k: 5, w: 4 }, files: {}, units: [{ bogus: true }] }),
+      JSON.stringify({ version: 3, params: { k: 5, w: 4 }, files: {}, units: [{ bogus: true }] }),
     )
     expect(() => new Store(path.join(tmp, '.surgex')).getAll()).toThrow(/malformed unit/)
   })
@@ -83,7 +83,7 @@ describe('Store', () => {
     fs.writeFileSync(
       path.join(tmp, '.surgex/index.json'),
       JSON.stringify({
-        version: 2,
+        version: 3,
         params: { k: 5, w: 4 },
         files: { 'a.ts': { mtimeMs: 'nope' } },
         units: [],
@@ -153,6 +153,33 @@ describe('Store', () => {
     })
   })
 
+  it('writes the index atomically, leaving no temp file behind', () => {
+    const store = new Store(path.join(tmp, '.surgex'))
+    store.replaceAll([makeUnit(path.join(tmp, 'a.ts'))])
+
+    const leftovers = fs
+      .readdirSync(path.join(tmp, '.surgex'))
+      .filter(name => name.includes('.tmp'))
+    expect(leftovers).toEqual([])
+    // the index itself is valid and reloadable
+    expect(new Store(path.join(tmp, '.surgex')).count()).toBe(1)
+  })
+
+  it('cleans up the temp file and rethrows when the atomic rename fails', () => {
+    const surgexDir = path.join(tmp, '.surgex')
+    // Make the index path a non-empty directory so renaming a file onto it
+    // fails — exercising the cleanup-and-rethrow path without mocking fs.
+    fs.mkdirSync(path.join(surgexDir, 'index.json'), { recursive: true })
+    fs.writeFileSync(path.join(surgexDir, 'index.json', 'keep'), 'x')
+
+    const store = new Store(surgexDir)
+    expect(() => store.replaceAll([makeUnit(path.join(tmp, 'a.ts'))])).toThrow()
+
+    // the half-written temp file was removed
+    const leftovers = fs.readdirSync(surgexDir).filter(name => name.includes('.tmp'))
+    expect(leftovers).toEqual([])
+  })
+
   it('count returns the number of stored units', () => {
     const store = new Store(path.join(tmp, '.surgex'))
     expect(store.count()).toBe(0)
@@ -164,7 +191,7 @@ describe('Store', () => {
     fs.mkdirSync(path.join(tmp, '.surgex'))
     fs.writeFileSync(
       path.join(tmp, '.surgex/index.json'),
-      JSON.stringify({ version: 2, params: { k: 5, w: 4 }, files: [], units: [] }),
+      JSON.stringify({ version: 3, params: { k: 5, w: 4 }, files: [], units: [] }),
     )
     expect(() => new Store(path.join(tmp, '.surgex')).getAll()).toThrow(/files is not an object/)
   })
@@ -173,7 +200,7 @@ describe('Store', () => {
     fs.mkdirSync(path.join(tmp, '.surgex'))
     fs.writeFileSync(
       path.join(tmp, '.surgex/index.json'),
-      JSON.stringify({ version: 2, params: null, files: {}, units: [] }),
+      JSON.stringify({ version: 3, params: null, files: {}, units: [] }),
     )
     expect(() => new Store(path.join(tmp, '.surgex')).getAll()).toThrow(
       /missing fingerprint params/,
@@ -184,7 +211,7 @@ describe('Store', () => {
     fs.mkdirSync(path.join(tmp, '.surgex'))
     fs.writeFileSync(
       path.join(tmp, '.surgex/index.json'),
-      JSON.stringify({ version: 2, params: { k: 5, w: 4 }, files: {}, units: {} }),
+      JSON.stringify({ version: 3, params: { k: 5, w: 4 }, files: {}, units: {} }),
     )
     expect(() => new Store(path.join(tmp, '.surgex')).getAll()).toThrow(/units is not an array/)
   })
@@ -195,7 +222,7 @@ describe('Store', () => {
     fs.writeFileSync(
       path.join(tmp, '.surgex/index.json'),
       JSON.stringify({
-        version: 2,
+        version: 3,
         params: { k: 5, w: 4 },
         files: {},
         units: [{ ...makeUnit(absoluteFile), id: 1 }],

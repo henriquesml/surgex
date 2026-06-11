@@ -8,7 +8,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - Incremental indexing: `surgex index` stores each file's mtime and size in
-  the index (format v2) and only re-parses files that changed since the last
+  the index (format v3) and only re-parses files that changed since the last
   run; deleted files drop out automatically. The cache is bypassed when the
   Winnowing parameters change or with the new `index --force` flag.
 - `check --json` — machine-readable output for CI and editor integrations.
@@ -31,6 +31,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   working when the project moves or is checked out on another machine. The
   index format is now versioned and validated on load (old indexes must be
   rebuilt with `surgex index`).
+- Index format bumped to v3: normalization now folds TypeScript destructuring
+  shorthand and Ruby instance/class/global variables and symbols, so older
+  fingerprints no longer match and pre-v3 indexes are rejected with a prompt to
+  re-run `surgex index`.
+- The index is written atomically (temp file + `rename`), so an interrupted
+  write (Ctrl-C, OOM) can no longer leave a truncated `.surgex/index.json`.
+- `check <file>`/`check <dir>` anchor report paths at the git repository root
+  instead of the current working directory, matching the paths used for
+  git-derived changes.
 - `Store.discover` no longer walks above the git repository root when looking
   for `.surgex/`.
 - `check <dir>` now uses the same ignore list as `index` (previously only
@@ -45,11 +54,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to structural matches rather than diffs.
 
 ### Fixed
+- Type-2 detection gaps: TypeScript destructuring shorthand (`{ token }`) and
+  Ruby instance variables (`@user`), class/global variables, and symbols
+  (`:user_key`) were left un-normalized, so structurally identical code that
+  differed only in those names was missed. They now normalize like any other
+  identifier (symbols to a distinct `SYM` token), so these clones are detected.
 - `surgex report` crashed with infinite recursion (`Maximum call stack size
   exceeded`).
 - Git commands are now invoked with argument arrays (`execFileSync`) instead
   of interpolated shell strings — file names or refs containing shell
   metacharacters can no longer inject commands.
+- Git **argument** injection via `--from`/refs: a ref such as
+  `--from=--output=/path` was parsed by git itself as an option (not a
+  revision), letting a caller pass arbitrary git flags. Refs that look like
+  options are now rejected, and refs are passed after `--end-of-options`.
 - Modified-unit detection no longer collides on repeated names (e.g. multiple
   Ruby `initialize` methods in one file).
 - The candidate-pair key in the detector no longer collides on very large
@@ -64,6 +82,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   checked file.
 - Jaccard similarity reuses one fingerprint `Set` per unit instead of
   allocating two new `Set`s per compared pair.
+- `check` now skips structural-noise hashes shared by very many indexed units
+  (the same cap full-scan detection already used), so one common fingerprint
+  hash no longer forces every checked unit into an O(N) scan of the index.
+- The `--show-code` structural match view caches each file's lines (invalidated
+  by mtime) instead of re-reading the whole file for every line range.
+- tree-sitter grammars are loaded lazily, so library consumers of the pure
+  fingerprint/Jaccard API don't pay the cost of loading native grammars.
 
 ### Internal
 - Reorganized the source into layered modules (`core`, `lang`, `io`,
