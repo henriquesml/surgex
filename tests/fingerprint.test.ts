@@ -20,9 +20,16 @@ describe('fingerprint', () => {
     expect(jaccard(a, b)).toBe(0)
   })
 
-  it('handles sequences shorter than k', () => {
-    const short = fingerprint(['ID', 'ID'])
-    expect(short.length).toBe(2)
+  it('fingerprints sequences shorter than k as a single gram', () => {
+    // Too short to form a k-gram: the whole sequence hashes to one value, so
+    // identical short units match and differing ones do not.
+    expect(fingerprint(['ID', 'ID'])).toHaveLength(1)
+    expect(fingerprint(['ID', 'ID'])).toEqual(fingerprint(['ID', 'ID']))
+    expect(fingerprint(['ID', 'ID'])).not.toEqual(fingerprint(['ID', 'NUM']))
+  })
+
+  it('returns an empty fingerprint for an empty token sequence', () => {
+    expect(fingerprint([])).toEqual([])
   })
 
   it('respects custom k/w params', () => {
