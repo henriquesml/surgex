@@ -6,6 +6,8 @@ import { execFileSync } from 'child_process'
 import { Store } from '../src/io/store'
 import { checkFiles } from '../src/pipeline/checker'
 import { parseFile } from '../src/lang/parser'
+import { MAX_UNITS_PER_HASH } from '../src/core/detector'
+import type { CodeUnit } from '../src/types'
 
 const CLONE_A = `export function useProducts(token) {
   const items = fetchData(token)
@@ -162,6 +164,34 @@ describe('checkFiles', () => {
       report.files[0].insertions[1].similarity,
     )
     expect(report.files[0].insertions[0].existing.file).toBe(exactIndexed)
+  })
+
+  it('skips structural-noise hashes shared by very many indexed units', () => {
+    const checkedFile = write('src/checked.ts', CLONE_A)
+    const noisyHash = parseFile(checkedFile)[0].fingerprint[0]
+
+    // More indexed units than the cap, all sharing one hash with the checked
+    // unit but otherwise unique. That bucket must be skipped, so the only
+    // shared hash never yields a comparison and no spurious match is reported.
+    const noise: CodeUnit[] = Array.from({ length: MAX_UNITS_PER_HASH + 1 }, (_, i) => ({
+      file: path.join(tmp, 'src/noise.ts'),
+      startLine: i * 10 + 1,
+      endLine: i * 10 + 5,
+      name: `noise${i}`,
+      type: 'function',
+      language: 'typescript',
+      tokenCount: 30,
+      fingerprint: [noisyHash, 1_000_000 + i],
+    }))
+    const store = new Store(path.join(tmp, '.surgex'))
+    store.replaceAll(noise)
+
+    const report = checkFiles(
+      [{ absolutePath: checkedFile, repoRelativePath: 'src/checked.ts' }],
+      tmp,
+      store,
+    )
+    expect(report.files).toEqual([])
   })
 
   describe('with base ref', () => {

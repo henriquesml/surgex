@@ -1,6 +1,6 @@
 import { parseFile, parseSource } from '../lang/parser'
 import { jaccardSets } from '../core/fingerprint'
-import { detectClones } from '../core/detector'
+import { detectClones, MAX_UNITS_PER_HASH } from '../core/detector'
 import { groupClones } from '../core/grouping'
 import { fileAtRef } from '../io/git'
 import { Store } from '../io/store'
@@ -62,7 +62,13 @@ function buildMatcher(indexed: CodeUnit[], excludeFiles: Set<string>, threshold:
       let best: CheckMatch | null = null
 
       for (const hash of unit.fingerprint) {
-        for (const candidateIndex of candidateIndicesByHash.get(hash) ?? []) {
+        const bucket = candidateIndicesByHash.get(hash)
+        if (!bucket) continue
+        // Skip structural-noise hashes shared by very many indexed units, the
+        // same cap detectClones uses — otherwise one common hash makes every
+        // checked unit pay an O(N) scan over the whole index.
+        if (bucket.length > MAX_UNITS_PER_HASH) continue
+        for (const candidateIndex of bucket) {
           if (seenCandidates.has(candidateIndex)) continue
           seenCandidates.add(candidateIndex)
           const similarity = jaccardSets(unitSet, candidateSets[candidateIndex])
