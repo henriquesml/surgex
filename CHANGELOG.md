@@ -7,6 +7,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Ruby `module` and DSL blocks (`test "..." do`, `included do`, `namespace :x do`)
+  are now code units. Rails concerns and block-style test suites were previously
+  invisible: a file holding two structurally identical concerns produced zero
+  units and could never be reported.
+- `.rake`, `.gemspec`, `.ru`, `.jbuilder` and `Rakefile` are read as Ruby.
+- `surgex.json` at the project root sets defaults for both commands: `presets`,
+  `exclude`, `threshold` and `minTokens`. Two presets ship: `rails` (paths the
+  framework owns and regenerates) and `tests`.
+- `--exclude=<glob>` on `index` and `check`, repeatable, additive to the config.
+
+### Changed
+- Inside a git repository the file walk is driven by `git ls-files` (tracked
+  plus untracked-but-not-ignored) rather than a glob, so `.gitignore` is
+  honoured. A plain glob had to choose between skipping every dot-directory —
+  losing real code such as `.rubocop/cop/custom/*.rb` — and walking into
+  ignored runtime state orders of magnitude larger than the project.
+- A class or module whose body holds only nested definitions is treated as a
+  namespace shell and is no longer a unit. `module RuboCop; module Cop; class X`
+  reported the outer wrapper, so every namespace matched every other namespace
+  and the real finding was labelled `RuboCop`.
+- Index format bumped to v4; `INDEX_VERSION` is exported so tests track it.
+
+### Fixed
+- `surgex index` no longer refuses to run against an index written by another
+  version or a corrupted one. It reported "re-run `surgex index`" — the command
+  that had just failed — leaving no way forward but deleting `.surgex/` by hand.
+
 - Incremental indexing: `surgex index` stores each file's mtime and size in
   the index (format v3) and only re-parses files that changed since the last
   run; deleted files drop out automatically. The cache is bypassed when the

@@ -7,7 +7,12 @@ function leafNode(type: string, text: string): SyntaxNode {
 }
 
 function parentNode(children: SyntaxNode[]): SyntaxNode {
-  return { type: 'program', text: '', childCount: children.length, children } as unknown as SyntaxNode
+  return {
+    type: 'program',
+    text: '',
+    childCount: children.length,
+    children,
+  } as unknown as SyntaxNode
 }
 
 describe('normalizeNode', () => {

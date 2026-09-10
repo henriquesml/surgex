@@ -23,7 +23,15 @@ Two commands:
 
 Source files are parsed with [tree-sitter](https://tree-sitter.github.io/tree-sitter/), a fast incremental parser that produces a concrete syntax tree. Supported languages: **TypeScript**, **TSX**, **Ruby**.
 
-The parser walks the AST and extracts _code units_: `function_declaration`, `method_definition`, `arrow_function` (when assigned to a `const`), and `class` nodes.
+Ruby is not only `.rb`: `.rake`, `.gemspec`, `.ru`, `.jbuilder` and `Rakefile` are read as Ruby too.
+
+The parser walks the AST and extracts _code units_.
+
+In TypeScript: `function_declaration`, `method_definition`, `arrow_function` (when assigned to a `const`), and `class` nodes.
+
+In Ruby: `method`, `class` and `module` nodes, plus **DSL blocks** — `test "..." do`, `included do`, `namespace :x do`. Rails and the test frameworks put real, duplicable bodies in blocks rather than in `def`s, so a codebase written that way is otherwise invisible. A block is named by its first string or symbol argument, falling back to the method it is passed to. Blocks *inside* a method body are skipped: there they are implementation detail the method unit already covers.
+
+A class or module whose body holds nothing but nested definitions — `module RuboCop; module Cop; class Foo` — is a **namespace shell** and is not a unit. Emitting it would make every namespace read as a clone of every other, and would report the real finding under a name nobody searches for.
 
 ### 2. Normalization — Type-2 clone detection
 
@@ -171,7 +179,9 @@ surgex index --force                  # re-parse everything, ignoring the cache
 surgex index --kgram=7 --window=5     # tune Winnowing parameters
 ```
 
-Ignored automatically: `node_modules`, `dist`, `tmp`, `vendor`, `coverage`, `.git`, `spec/fixtures`.
+Inside a git repository the file list comes from **git** — tracked files plus untracked ones that are not ignored. `.gitignore` is therefore honoured for free, which is what makes dot-directories safe to read: real code under `.rubocop/cop/custom/` is indexed, while an ignored `.claude/` holding gigabytes of runtime state is not. Outside a repository the walk falls back to a glob.
+
+Ignored on top of that: `node_modules`, `dist`, `tmp`, `vendor`, `coverage`, `spec/fixtures`, and dot-directories holding dependencies or build output (`.cache`, `.bundle`, `.venv`, `.next`, `.yarn`).
 
 ---
 
@@ -199,6 +209,7 @@ Options:
 | `--min-tokens=N` | `20` | Ignore units with fewer normalized tokens |
 | `--show-code` | — | Show structural matches side by side |
 | `--json` | — | Machine-readable JSON output |
+| `--exclude=<glob>` | — | Skip paths; repeatable, adds to `surgex.json` |
 | `--fail-on-found` | — | Exit with code 1 if clones are found (CI gate) |
 
 `check` also detects clones _within the checked files themselves_ — two
@@ -219,6 +230,35 @@ Checking 127 file(s) [all indexed files]
 ```
 
 ---
+
+## Configuration
+
+An optional `surgex.json` at the project root sets the defaults for both commands.
+
+```json
+{
+  "presets": ["rails", "tests"],
+  "exclude": ["engines/ui/app/components/**"],
+  "threshold": 0.8,
+  "minTokens": 30
+}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `presets` | Named exclusion sets (below) |
+| `exclude` | Extra globs, matched against project-root relative paths |
+| `threshold` | Default for `--threshold` |
+| `minTokens` | Default for `--min-tokens` |
+
+Command-line flags override `threshold` and `minTokens`; `--exclude` adds to the list rather than replacing it.
+
+**Presets**
+
+- `rails` — paths the framework owns and regenerates: `db/migrate`, `db/*_schema.rb`, `db/seeds.rb`, `config/environments`, `config/application.rb`, `config/boot.rb`, `config/environment.rb`, `config/puma.rb`, `bin/`. Every app has them, they are identical by construction, and nobody can act on a report that says so.
+- `tests` — `test/` and `spec/` directories and `*_test.rb` / `*_spec.rb` / `*.test.ts` files. Kept separate from `rails` on purpose: duplication between test cases is often deliberate — table-driven tests repeat a shape by design — so whether it counts as noise is a project's call, not a default.
+
+Excluded files never enter the index, so excluding a large generated tree makes indexing faster as well as quieter.
 
 ## Clone types
 
