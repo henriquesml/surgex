@@ -25,6 +25,20 @@ Source files are parsed with [tree-sitter](https://tree-sitter.github.io/tree-si
 
 Ruby is not only `.rb`: `.rake`, `.gemspec`, `.ru`, `.jbuilder` and `Rakefile` are read as Ruby too.
 
+**ERB templates** (`.erb`, including `.html.erb`, `.turbo_stream.erb` and mailer views) are parsed by [Herb](https://herb-tools.dev), an HTML-aware ERB parser. tree-sitter's ERB grammar only delimits `<% %>` and leaves the HTML as opaque text, which is close to useless for structural comparison; Herb produces a real tree of HTML elements and ERB nodes.
+
+A template contributes two kinds of unit: the **whole file**, because "these two partials are the same, extract one" is the finding a Rails codebase acts on, and each **ERB block**, so a repeated `each` body inside one long template is still visible.
+
+Template normalization keeps what is structure and collapses what is not:
+
+| Kept | Collapsed |
+| --- | --- |
+| Tag names, attribute names, nesting | Text content → `TEXT` |
+| ERB control flow (`ERB` … `ERB_END`) | Attribute values → `STR` |
+| | `class` lists → `STR` |
+
+Class lists are collapsed because in a utility-CSS codebase they are the noisiest attribute there is: kept, two cards that differ only in padding never match. Ruby inside `<%= %>` runs through the *Ruby* normalizer, so `<%= org.name %>` and `<%= company.title %>` collapse to the same shape — Herb and the existing normalizer compose.
+
 The parser walks the AST and extracts _code units_.
 
 In TypeScript: `function_declaration`, `method_definition`, `arrow_function` (when assigned to a `const`), and `class` nodes.

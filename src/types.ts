@@ -1,5 +1,5 @@
-export type Language = 'typescript' | 'ruby'
-export type UnitType = 'function' | 'method' | 'arrow' | 'class' | 'module' | 'block'
+export type Language = 'typescript' | 'ruby' | 'erb'
+export type UnitType = 'function' | 'method' | 'arrow' | 'class' | 'module' | 'block' | 'template'
 
 export interface CodeUnit {
   id?: number

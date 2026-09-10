@@ -20,6 +20,7 @@ export const FILE_PATTERNS = [
   '**/*.ru',
   '**/*.jbuilder',
   '**/Rakefile',
+  '**/*.erb',
 ]
 
 // The walk runs with `dot: true`, so dot-directories holding dependencies or

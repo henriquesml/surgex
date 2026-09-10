@@ -5,6 +5,7 @@ import { minimatch } from 'minimatch'
 import { indexPaths, collectFiles } from '../pipeline/indexer'
 import { checkFiles } from '../pipeline/checker'
 import { isSupportedFile } from '../lang/parser'
+import { loadTemplateParser } from '../lang/template'
 import { detectClones } from '../core/detector'
 import { groupClones } from '../core/grouping'
 import { DEFAULT_PARAMS } from '../core/fingerprint'
@@ -236,6 +237,13 @@ async function runCheck(args: string[]): Promise<void> {
 
 async function main(argv: string[]): Promise<void> {
   const [command, ...args] = argv
+
+  // Herb is WebAssembly and instantiates asynchronously, while everything
+  // downstream parses synchronously. Loading it once here keeps that boundary
+  // in one place instead of threading a promise through the pipeline.
+  if (command === 'index' || command === 'check' || command === 'report') {
+    await loadTemplateParser()
+  }
 
   switch (command) {
     case 'index':

@@ -12,6 +12,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   invisible: a file holding two structurally identical concerns produced zero
   units and could never be reported.
 - `.rake`, `.gemspec`, `.ru`, `.jbuilder` and `Rakefile` are read as Ruby.
+- ERB templates are parsed, via [Herb](https://herb-tools.dev). A template
+  yields a unit for the whole file and one per ERB block. On a Rails monorepo
+  this surfaced a mailer component library copy-pasted between two apps, four
+  identical `document_update_request` mailers, and three identical index views
+  — none of which any earlier version could see.
 - `surgex.json` at the project root sets defaults for both commands: `presets`,
   `exclude`, `threshold` and `minTokens`. Two presets ship: `rails` (paths the
   framework owns and regenerates) and `tests`.
@@ -33,6 +38,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   honoured. A plain glob had to choose between skipping every dot-directory —
   losing real code such as `.rubocop/cop/custom/*.rb` — and walking into
   ignored runtime state orders of magnitude larger than the project.
+- A clone group whose units all sit inside the units of another group is no
+  longer reported: four identical templates were reported once as templates and
+  again as the blocks inside them.
 - Sibling DSL blocks in a single file are no longer reported. A table-driven
   test repeats a shape on purpose, and on a Rails monorepo those groups were
   nearly every finding a pull request produced — 9 of 9 on one diff, 2 of which

@@ -4,6 +4,7 @@ import * as fs from 'fs'
 import { normalizeNode } from '../core/normalizer'
 import { fingerprint, DEFAULT_PARAMS, type FingerprintParams } from '../core/fingerprint'
 import type { CodeUnit, Language, UnitType } from '../types'
+import { extractTemplateUnits, templateParserReady } from './template'
 
 // tree-sitter grammars ship as native CommonJS modules without type declarations.
 // They are loaded lazily so that consumers of the pure fingerprint/jaccard API
@@ -184,7 +185,7 @@ function extractRubyUnits(root: SyntaxNode): RawUnit[] {
 const RUBY_EXTENSIONS = new Set(['rb', 'rake', 'gemspec', 'ru', 'jbuilder'])
 const RUBY_BASENAMES = new Set(['Rakefile'])
 
-type SourceKind = 'ts' | 'tsx' | 'ruby'
+type SourceKind = 'ts' | 'tsx' | 'ruby' | 'erb'
 
 export function sourceKind(filePath: string): SourceKind | null {
   const basename = filePath.split(/[\\/]/).pop() ?? filePath
@@ -192,6 +193,7 @@ export function sourceKind(filePath: string): SourceKind | null {
   const extension = basename.includes('.') ? basename.split('.').pop()!.toLowerCase() : ''
   if (extension === 'tsx') return 'tsx'
   if (extension === 'ts') return 'ts'
+  if (extension === 'erb') return 'erb'
   if (RUBY_EXTENSIONS.has(extension)) return 'ruby'
   return null
 }
@@ -202,6 +204,18 @@ export function isSupportedFile(filePath: string): boolean {
   return sourceKind(filePath) !== null
 }
 
+// Normalized tokens for a Ruby fragment. Templates use it so the Ruby inside
+// `<%= %>` collapses exactly the way it does in a `.rb` file: `<%= org.name %>`
+// and `<%= company.title %>` produce the same shape.
+export function rubyTokens(source: string): string[] {
+  if (!source.trim()) return []
+  try {
+    return normalizeNode(rubyParser().parse(source).rootNode)
+  } catch {
+    return []
+  }
+}
+
 // Parse source code directly (used when content comes from git, not disk)
 export function parseSource(
   source: string,
@@ -209,6 +223,23 @@ export function parseSource(
   params: FingerprintParams = DEFAULT_PARAMS,
 ): CodeUnit[] {
   const kind = sourceKind(filePath)
+
+  // Templates come from Herb, not tree-sitter, and carry their own tokens, so
+  // they skip the shared node-walking path below entirely.
+  if (kind === 'erb') {
+    if (!templateParserReady()) return []
+    return extractTemplateUnits(source, filePath, { rubyTokens }).map(unit => ({
+      file: filePath,
+      startLine: unit.startLine,
+      endLine: unit.endLine,
+      name: unit.name,
+      type: unit.type as UnitType,
+      language: 'erb' as Language,
+      tokenCount: unit.tokens.length,
+      fingerprint: fingerprint(unit.tokens, params),
+    }))
+  }
+
   let tree: ReturnType<Parser['parse']>
   let language: Language
   let rawUnits: RawUnit[]

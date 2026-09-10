@@ -26,6 +26,7 @@ const PLURAL_TYPE: Record<CodeUnit['type'], string> = {
   function: 'functions',
   method: 'methods',
   module: 'modules',
+  template: 'templates',
 }
 
 // Drops units that are fully contained in another unit of the same group
@@ -64,6 +65,29 @@ function dropSiblingBlocks(groups: CloneGroup[]): CloneGroup[] {
   })
 }
 
+// `dropContainedUnits` works inside one group, but a template and the block it
+// wraps land in *different* groups: four identical mailers report once as four
+// templates and again as the four blocks inside them. When every unit of one
+// group sits inside a unit of another, the outer group already told the story.
+function dropContainedGroups(groups: CloneGroup[]): CloneGroup[] {
+  const contains = (outer: CodeUnit, inner: CodeUnit) =>
+    outer.file === inner.file &&
+    outer.startLine <= inner.startLine &&
+    outer.endLine >= inner.endLine
+
+  return groups.filter(
+    (group, index) =>
+      !groups.some(
+        (other, otherIndex) =>
+          otherIndex !== index &&
+          other.units.length >= group.units.length &&
+          // ties would drop both halves of a mutually contained pair
+          (other.units.length > group.units.length || otherIndex < index) &&
+          group.units.every(unit => other.units.some(candidate => contains(candidate, unit))),
+      ),
+  )
+}
+
 // The larger a clone group, the less likely it is an accident. Three copies of
 // a hook is a copy-paste; thirty identical Rails mailer layouts, generated
 // migrations or value objects are a convention the codebase chose. Off by
@@ -76,7 +100,10 @@ function dropIdiomGroups(groups: CloneGroup[], maxGroupSize?: number): CloneGrou
 // Every reported group goes through here, so `check` and `check --all` agree
 // on what counts as a finding.
 function presentableGroups(groups: CloneGroup[], maxGroupSize?: number): CloneGroup[] {
-  return dropIdiomGroups(dropSiblingBlocks(dropContainedUnits(groups)), maxGroupSize)
+  return dropIdiomGroups(
+    dropContainedGroups(dropSiblingBlocks(dropContainedUnits(groups))),
+    maxGroupSize,
+  )
 }
 
 function toJson(display: DisplayGroup[], rel: (f: string) => string): string {

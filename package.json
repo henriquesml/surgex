@@ -1,7 +1,7 @@
 {
   "name": "surgex",
   "version": "0.1.0",
-  "description": "Deterministic code clone detector \u2014 finds componentization opportunities. No LLM, no embeddings, fully reproducible.",
+  "description": "Deterministic code clone detector — finds componentization opportunities. No LLM, no embeddings, fully reproducible.",
   "license": "MIT",
   "author": "henriquesml",
   "repository": {
@@ -50,6 +50,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "@herb-tools/node-wasm": "^0.10.4",
     "glob": "^10.4.5",
     "minimatch": "^9.0.5",
     "tree-sitter": "^0.21.1",
