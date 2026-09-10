@@ -43,6 +43,26 @@ function dropContainedUnits(groups: CloneGroup[]): CloneGroup[] {
     .filter(group => group.units.length >= 2)
 }
 
+// Sibling DSL blocks in one file repeat a shape on purpose: a table-driven
+// test with a case per row, a `describe` whose examples differ only in their
+// data. Reporting them says nothing but "this file is written the way it was
+// meant to be" — on a Rails monorepo they were nearly every finding a pull
+// request turned up. The same block duplicated *across* files is a different
+// claim, and is still reported.
+function dropSiblingBlocks(groups: CloneGroup[]): CloneGroup[] {
+  return groups.filter(group => {
+    const everyUnitIsABlock = group.units.every(unit => unit.type === 'block')
+    const allInOneFile = new Set(group.units.map(unit => unit.file)).size === 1
+    return !(everyUnitIsABlock && allInOneFile)
+  })
+}
+
+// Every reported group goes through here, so `check` and `check --all` agree
+// on what counts as a finding.
+function presentableGroups(groups: CloneGroup[]): CloneGroup[] {
+  return dropSiblingBlocks(dropContainedUnits(groups))
+}
+
 function toJson(display: DisplayGroup[], rel: (f: string) => string): string {
   const out = {
     found: display.length,
@@ -72,7 +92,7 @@ function relativizer(root: string): (file: string) => string {
 // ── full-scan report (`check --all`): CloneGroup[] → formatted string ───────
 
 export function formatReport(rawGroups: CloneGroup[], options: ReportOptions = {}): string {
-  const groups = dropContainedUnits(rawGroups)
+  const groups = presentableGroups(rawGroups)
   const files = [...new Set(groups.flatMap(group => group.units.map(unit => unit.file)))]
   const root = options.repoRoot ?? commonDirPrefix(files)
   const shortDir = (dirFiles: string[]) => {
@@ -142,7 +162,7 @@ export function formatCheckReport(
     }
   }
 
-  for (const group of dropContainedUnits(report.internal)) {
+  for (const group of presentableGroups(report.internal)) {
     display.push({
       similarity: group.similarity,
       cloneType: cloneType(group.similarity, group.units),
@@ -161,5 +181,5 @@ export function countFindings(report: CheckReport): number {
     (total, file) => total + file.insertions.length + file.modifications.length,
     0,
   )
-  return fileMatches + dropContainedUnits(report.internal).length
+  return fileMatches + presentableGroups(report.internal).length
 }

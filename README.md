@@ -270,6 +270,8 @@ Excluded files never enter the index, so excluding a large generated tree makes 
 
 Results are grouped by type so the most actionable duplicates appear first.
 
+Two groups are never reported: units fully contained in another unit of the same group (a cloned class and each of its methods — the class alone tells the story), and **sibling DSL blocks within a single file**. A table-driven test repeats a shape by design; saying so is not a finding. The same block duplicated *across* files is a different claim, and is reported.
+
 ---
 
 ## Example output

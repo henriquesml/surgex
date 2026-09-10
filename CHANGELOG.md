@@ -23,6 +23,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   honoured. A plain glob had to choose between skipping every dot-directory —
   losing real code such as `.rubocop/cop/custom/*.rb` — and walking into
   ignored runtime state orders of magnitude larger than the project.
+- Sibling DSL blocks in a single file are no longer reported. A table-driven
+  test repeats a shape on purpose, and on a Rails monorepo those groups were
+  nearly every finding a pull request produced — 9 of 9 on one diff, 2 of which
+  survive the rule and are both real. The same block duplicated across files
+  is a different claim and is still reported.
 - A class or module whose body holds only nested definitions is treated as a
   namespace shell and is no longer a unit. `module RuboCop; module Cop; class X`
   reported the outer wrapper, so every namespace matched every other namespace

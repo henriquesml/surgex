@@ -474,3 +474,67 @@ describe('renderStructuralMatchView', () => {
     expect(result).toContain('too large to compare')
   })
 })
+
+describe('sibling DSL blocks', () => {
+  const group = (units: CodeUnit[]): CloneGroup => ({ similarity: 1, units })
+
+  it('drops a group whose blocks are all siblings in one file', () => {
+    const out = formatReport([
+      group([
+        makeUnit({
+          type: 'block',
+          file: 'a_test.rb',
+          name: 'first case',
+          startLine: 5,
+          endLine: 9,
+        }),
+        makeUnit({
+          type: 'block',
+          file: 'a_test.rb',
+          name: 'second case',
+          startLine: 11,
+          endLine: 15,
+        }),
+      ]),
+    ])
+    expect(out).toContain('No similar code found')
+  })
+
+  it('keeps the same blocks when they span two files', () => {
+    const out = formatReport([
+      group([
+        makeUnit({
+          type: 'block',
+          file: 'a_test.rb',
+          name: 'first case',
+          startLine: 5,
+          endLine: 9,
+        }),
+        makeUnit({
+          type: 'block',
+          file: 'b_test.rb',
+          name: 'second case',
+          startLine: 5,
+          endLine: 9,
+        }),
+      ]),
+    ])
+    expect(out).toContain('first case')
+  })
+
+  it('keeps non-block units that share a file', () => {
+    const out = formatReport([
+      group([
+        makeUnit({ type: 'method', file: 'a.rb', name: 'fetch_user', startLine: 5, endLine: 9 }),
+        makeUnit({
+          type: 'method',
+          file: 'a.rb',
+          name: 'fetch_company',
+          startLine: 11,
+          endLine: 15,
+        }),
+      ]),
+    ])
+    expect(out).toContain('fetch_user')
+  })
+})
