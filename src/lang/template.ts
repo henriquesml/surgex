@@ -11,10 +11,6 @@ export async function loadTemplateParser(): Promise<void> {
   herbLoaded = true
 }
 
-export function templateParserReady(): boolean {
-  return herbLoaded
-}
-
 export interface TemplateUnit {
   name: string
   type: 'template' | 'block'
@@ -32,20 +28,20 @@ function isNode(value: unknown): value is HerbNode {
   return typeof value === 'object' && value !== null && typeof (value as HerbNode).type === 'string'
 }
 
-// Names arrive as either a raw string or a lexer token carrying `value`.
-function tokenText(value: unknown): string {
-  if (typeof value === 'string') return value
-  if (value && typeof value === 'object' && 'value' in value) {
-    const inner = (value as { value: unknown }).value
-    if (typeof inner === 'string') return inner
-  }
-  return ''
+// Herb splits its text two ways, and the split is stable: HTML text nodes,
+// literals and attribute-name parts carry a plain string in `content`, while
+// ERB nodes carry a lexer token whose text is in `content.value`.
+function textOf(node: HerbNode): string {
+  return String(node.content)
 }
 
-function lineOf(node: unknown, edge: 'start' | 'end'): number {
-  const location = isNode(node) ? (node.location as Record<string, unknown> | undefined) : undefined
-  const point = location?.[edge] as { line?: number } | undefined
-  return typeof point?.line === 'number' ? point.line : 1
+function tokenText(token: unknown): string {
+  return (token as { value: string }).value
+}
+
+function lineOf(node: HerbNode, edge: 'start' | 'end'): number {
+  const location = node.location as Record<'start' | 'end', { line: number }>
+  return location[edge].line
 }
 
 // Child arrays live under different field names depending on the node.
@@ -85,7 +81,7 @@ const COLLAPSED_ATTRIBUTES = new Set(['class'])
 function classWords(value: HerbNode, options: TemplateOptions): string[] {
   return childNodes(value).flatMap(child =>
     child.type === 'AST_LITERAL_NODE'
-      ? (tokenText(child.content) || String(child.content ?? '')).split(/\s+/).filter(Boolean)
+      ? textOf(child).split(/\s+/).filter(Boolean)
       : normalize(child, options),
   )
 }
@@ -93,10 +89,8 @@ function classWords(value: HerbNode, options: TemplateOptions): string[] {
 function normalize(node: HerbNode, options: TemplateOptions): string[] {
   switch (node.type) {
     // Text and quoted literals carry the domain words, not the structure.
-    case 'AST_HTML_TEXT_NODE': {
-      const content = tokenText(node.content) || String(node.content ?? '')
-      return content.trim() ? ['TEXT'] : []
-    }
+    case 'AST_HTML_TEXT_NODE':
+      return textOf(node).trim() ? ['TEXT'] : []
     case 'AST_LITERAL_NODE':
       return ['STR']
     case 'AST_HTML_COMMENT_NODE':
@@ -106,8 +100,10 @@ function normalize(node: HerbNode, options: TemplateOptions): string[] {
       return []
 
     case 'AST_HTML_ELEMENT_NODE': {
-      const tag = tokenText(node.tag_name) || 'tag'
-      const open = isNode(node.open_tag) ? normalize(node.open_tag, options) : []
+      const tag = tokenText(node.tag_name)
+      // An element node always carries its open tag: Herb reports a stray
+      // `</div>` as a bare close-tag node, never as an element without one.
+      const open = normalize(node.open_tag as HerbNode, options)
       const body = childNodes(node).flatMap(child => normalize(child, options))
       return [`<${tag}`, ...open, '>', ...body, `</${tag}>`]
     }
@@ -116,11 +112,9 @@ function normalize(node: HerbNode, options: TemplateOptions): string[] {
       return childNodes(node).flatMap(child => normalize(child, options))
 
     case 'AST_HTML_ATTRIBUTE_NODE': {
-      const name = isNode(node.name)
-        ? childNodes(node.name)
-            .map(part => tokenText(part.content) || String(part.content ?? ''))
-            .join('')
-        : tokenText(node.name)
+      const name = childNodes(node.name as HerbNode)
+        .map(textOf)
+        .join('')
 
       // The attribute name is structure; its value rarely is. A class list is
       // the exception worth a switch: collapsed, two cards that differ only in
@@ -143,7 +137,7 @@ function normalize(node: HerbNode, options: TemplateOptions): string[] {
   }
 
   if (node.type.startsWith('AST_ERB_')) {
-    const ruby = tokenText(node.content) || String(node.content ?? '')
+    const ruby = tokenText(node.content)
     const body = childNodes(node).flatMap(child => normalize(child, options))
     return ['ERB', ...options.rubyTokens(ruby), ...body, 'ERB_END']
   }
@@ -160,42 +154,34 @@ export function extractTemplateUnits(
   filePath: string,
   options: TemplateOptions,
 ): TemplateUnit[] {
-  if (!herbLoaded) return []
-
-  let document: HerbNode
   try {
-    const parsed = Herb.parse(source) as unknown as { value?: unknown }
-    if (!isNode(parsed.value)) return []
-    document = parsed.value
+    const document = (Herb.parse(source) as unknown as { value: HerbNode }).value
+    const units: TemplateUnit[] = []
+
+    units.push({
+      name: filePath.split(/[\\/]/).pop()!,
+      type: 'template',
+      startLine: 1,
+      endLine: source.split('\n').length,
+      tokens: normalize(document, options),
+    })
+
+    const visit = (node: HerbNode) => {
+      if (node.type === 'AST_ERB_BLOCK_NODE') {
+        units.push({
+          name: tokenText(node.content).trim(),
+          type: 'block',
+          startLine: lineOf(node, 'start'),
+          endLine: lineOf(node, 'end'),
+          tokens: normalize(node, options),
+        })
+      }
+      for (const child of childNodes(node)) visit(child)
+    }
+    visit(document)
+
+    return units
   } catch {
     return []
   }
-
-  const units: TemplateUnit[] = []
-  const name = filePath.split(/[\\/]/).pop() ?? filePath
-
-  units.push({
-    name,
-    type: 'template',
-    startLine: 1,
-    endLine: source.split('\n').length,
-    tokens: normalize(document, options),
-  })
-
-  const visit = (node: HerbNode) => {
-    if (node.type === 'AST_ERB_BLOCK_NODE') {
-      const ruby = (tokenText(node.content) || String(node.content ?? '')).trim()
-      units.push({
-        name: ruby || 'block',
-        type: 'block',
-        startLine: lineOf(node, 'start'),
-        endLine: lineOf(node, 'end'),
-        tokens: normalize(node, options),
-      })
-    }
-    for (const child of childNodes(node)) visit(child)
-  }
-  visit(document)
-
-  return units
 }

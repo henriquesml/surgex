@@ -2,7 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { formatReport, formatCheckReport, countFindings } from '../src/report/report'
+import {
+  formatReport,
+  formatCheckReport,
+  countFindings,
+  scanFindings,
+  checkFindings,
+} from '../src/report/report'
 import { formatGroups, commonDirPrefix, cloneType, cloneTypeLabel } from '../src/report/format'
 import { renderStructuralMatchView } from '../src/report/structural-match-view'
 import type { CloneGroup, CodeUnit } from '../src/types'
@@ -603,7 +609,111 @@ describe('github output format', () => {
     expect(out).toContain('file=a%2Cb.rb')
   })
 
+  it('names three duplicates and counts the rest', () => {
+    const wide: CloneGroup = {
+      similarity: 1,
+      units: Array.from({ length: 6 }, (_, index) =>
+        makeUnit({ file: `/repo/f${index}.rb`, name: `n${index}`, startLine: 1, endLine: 9 }),
+      ),
+    }
+    const out = formatReport([wide], { format: 'github', repoRoot: '/repo' })
+    expect(out).toContain('and 2 more')
+  })
+
   it('says nothing when there is nothing to report', () => {
     expect(formatReport([], { format: 'github' })).toBe('')
+  })
+})
+
+describe('findings, separately from formatting', () => {
+  const pair = (fileA: string, fileB: string): CloneGroup => ({
+    similarity: 1,
+    units: [
+      makeUnit({ type: 'method', file: fileA, name: 'a', startLine: 1, endLine: 9 }),
+      makeUnit({ type: 'method', file: fileB, name: 'b', startLine: 1, endLine: 9 }),
+    ],
+  })
+
+  it('scanFindings returns the same list the report prints', () => {
+    const findings = scanFindings([pair('/repo/a.rb', '/repo/b.rb')])
+    expect(findings).toHaveLength(1)
+    expect(findings[0].cloneType).toBe('Type-1')
+  })
+
+  it('scanFindings honours the ceiling, so a gate cannot fail on a hidden group', () => {
+    const big: CloneGroup = {
+      similarity: 1,
+      units: Array.from({ length: 8 }, (_, i) =>
+        makeUnit({ type: 'class', file: `app${i}/x.rb`, name: `X${i}` }),
+      ),
+    }
+    expect(scanFindings([big], { maxGroupSize: 6 })).toEqual([])
+  })
+})
+
+describe('a group already told by another group', () => {
+  const template = (file: string) =>
+    makeUnit({ type: 'template', file, name: 'show.html.erb', startLine: 1, endLine: 20 })
+  const inner = (file: string) =>
+    makeUnit({ type: 'block', file, name: 'rows.each', startLine: 5, endLine: 12 })
+
+  it('drops the inner group when the outer one covers every unit', () => {
+    const groups: CloneGroup[] = [
+      { similarity: 1, units: [inner('/r/a.erb'), inner('/r/b.erb'), inner('/r/c.erb')] },
+      {
+        similarity: 1,
+        units: [template('/r/a.erb'), template('/r/b.erb'), template('/r/c.erb')],
+      },
+    ]
+    const out = formatReport(groups, { format: 'json', repoRoot: '/r' })
+    const parsed = JSON.parse(out)
+    expect(parsed.found).toBe(1)
+    expect(parsed.groups[0].units[0].type).toBe('template')
+  })
+
+  it('keeps a group whose units live in files the other group never touches', () => {
+    const groups: CloneGroup[] = [
+      { similarity: 1, units: [inner('/r/x.erb'), inner('/r/y.erb')] },
+      { similarity: 1, units: [template('/r/a.erb'), template('/r/b.erb')] },
+    ]
+    expect(JSON.parse(formatReport(groups, { format: 'json', repoRoot: '/r' })).found).toBe(2)
+  })
+
+  it('keeps both halves of a mutually contained pair of the same size', () => {
+    const groups: CloneGroup[] = [
+      { similarity: 1, units: [template('/r/a.erb'), template('/r/b.erb')] },
+      { similarity: 1, units: [template('/r/a.erb'), template('/r/b.erb')] },
+    ]
+    expect(JSON.parse(formatReport(groups, { format: 'json', repoRoot: '/r' })).found).toBe(1)
+  })
+})
+
+describe('formatCheckReport — output formats', () => {
+  const report: CheckReport = {
+    files: [
+      {
+        file: '/repo/new.rb',
+        insertions: [
+          {
+            unit: makeUnit({ file: '/repo/new.rb', name: 'fresh', startLine: 4, endLine: 9 }),
+            existing: makeUnit({ file: '/repo/old.rb', name: 'older', startLine: 2, endLine: 7 }),
+            similarity: 1,
+          },
+        ],
+        modifications: [],
+      },
+    ],
+    internal: [],
+  }
+
+  it('emits an annotation anchored on the unit the change introduced', () => {
+    const out = formatCheckReport(report, '/repo', { format: 'github' })
+    expect(out).toMatch(/^::warning file=new\.rb,line=4,/)
+    expect(out).toContain('older (old.rb:2)')
+  })
+
+  it('counts the same findings it prints', () => {
+    expect(countFindings(report)).toBe(1)
+    expect(checkFindings(report)).toHaveLength(1)
   })
 })

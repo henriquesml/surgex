@@ -47,6 +47,26 @@ describe('loadConfig', () => {
     expect(() => loadConfig(root)).toThrow(/"exclude" must be an array of strings/)
   })
 
+  it('rejects a config that is not an object', () => {
+    write([{ presets: ['rails'] }])
+    expect(() => loadConfig(root)).toThrow(/expected a JSON object/)
+  })
+
+  it('rejects a non-numeric threshold', () => {
+    write({ threshold: 'high' })
+    expect(() => loadConfig(root)).toThrow(/"threshold" must be a number/)
+  })
+
+  it('rejects a minTokens that is neither a number nor an object', () => {
+    write({ minTokens: [30] })
+    expect(() => loadConfig(root)).toThrow(/must be a number or an object keyed by language/)
+  })
+
+  it('rejects a non-numeric floor for a language', () => {
+    write({ minTokens: { ruby: 'lots' } })
+    expect(() => loadConfig(root)).toThrow(/"minTokens\.ruby" must be a number/)
+  })
+
   it('rejects invalid JSON', () => {
     fs.writeFileSync(path.join(root, 'surgex.json'), '{ nope')
     expect(() => loadConfig(root)).toThrow(/Invalid JSON/)

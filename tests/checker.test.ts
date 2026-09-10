@@ -274,3 +274,22 @@ describe('checkFiles', () => {
     })
   })
 })
+
+describe('checkFiles — minTokens as a function', () => {
+  it('applies a floor chosen per language', () => {
+    const dir = path.join(tmp, 'src')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'a.ts'), CLONE_A)
+    fs.writeFileSync(path.join(dir, 'b.ts'), CLONE_B)
+
+    const store = new Store(path.join(tmp, '.surgex'))
+    store.replaceAll(parseFile(path.join(dir, 'a.ts')))
+
+    const files = [{ absolutePath: path.join(dir, 'b.ts'), repoRelativePath: 'src/b.ts' }]
+    const found = checkFiles(files, tmp, store, { minTokens: () => 0 })
+    const silenced = checkFiles(files, tmp, store, { minTokens: () => 100_000 })
+
+    expect(found.files.length).toBeGreaterThan(0)
+    expect(silenced.files).toEqual([])
+  })
+})

@@ -140,5 +140,5 @@ export function loadConfig(root: string): SurgexConfig {
 // The full exclude list for a run: the named presets, the config's own globs,
 // and anything passed on the command line.
 export function resolveExcludes(config: SurgexConfig, extra: string[] = []): string[] {
-  return [...config.presets.flatMap(preset => PRESETS[preset] ?? []), ...config.exclude, ...extra]
+  return [...config.presets.flatMap(preset => PRESETS[preset]), ...config.exclude, ...extra]
 }

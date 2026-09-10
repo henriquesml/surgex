@@ -4,7 +4,7 @@ import * as fs from 'fs'
 import { normalizeNode } from '../core/normalizer'
 import { fingerprint, DEFAULT_PARAMS, type FingerprintParams } from '../core/fingerprint'
 import type { CodeUnit, Language, UnitType } from '../types'
-import { extractTemplateUnits, templateParserReady } from './template'
+import { extractTemplateUnits } from './template'
 
 // tree-sitter grammars ship as native CommonJS modules without type declarations.
 // They are loaded lazily so that consumers of the pure fingerprint/jaccard API
@@ -125,16 +125,15 @@ function extractTypeScriptUnits(root: SyntaxNode): RawUnit[] {
 // frameworks put real, duplicable bodies in blocks rather than in `def`s, so a
 // block is named by its first string/symbol argument, falling back to the DSL
 // method itself (`included do` has no arguments).
+const LABEL_ARGUMENT_TYPES = new Set(['string', 'simple_symbol'])
+
 function rubyBlockName(call: SyntaxNode): string {
   const firstArgument = call.childForFieldName('arguments')?.namedChildren[0]
-  if (
-    firstArgument &&
-    (firstArgument.type === 'string' || firstArgument.type === 'simple_symbol')
-  ) {
-    const label = firstArgument.text.replace(/^[:"']|["']$/g, '').trim()
-    if (label) return label
-  }
-  return call.childForFieldName('method')?.text ?? 'block'
+  const label =
+    firstArgument && LABEL_ARGUMENT_TYPES.has(firstArgument.type)
+      ? firstArgument.text.replace(/^[:"']|["']$/g, '').trim()
+      : ''
+  return label || call.childForFieldName('method')!.text
 }
 
 // `module RuboCop; module Cop; class LaunchdarklySnakeCase ...` — the outer
@@ -188,7 +187,7 @@ const RUBY_BASENAMES = new Set(['Rakefile'])
 type SourceKind = 'ts' | 'tsx' | 'ruby' | 'erb'
 
 export function sourceKind(filePath: string): SourceKind | null {
-  const basename = filePath.split(/[\\/]/).pop() ?? filePath
+  const basename = filePath.split(/[\\/]/).pop()!
   if (RUBY_BASENAMES.has(basename)) return 'ruby'
   const extension = basename.includes('.') ? basename.split('.').pop()!.toLowerCase() : ''
   if (extension === 'tsx') return 'tsx'
@@ -208,8 +207,8 @@ export function isSupportedFile(filePath: string): boolean {
 // `<%= %>` collapses exactly the way it does in a `.rb` file: `<%= org.name %>`
 // and `<%= company.title %>` produce the same shape.
 export function rubyTokens(source: string): string[] {
-  if (!source.trim()) return []
   try {
+    if (!source.trim()) return []
     return normalizeNode(rubyParser().parse(source).rootNode)
   } catch {
     return []
@@ -227,7 +226,6 @@ export function parseSource(
   // Templates come from Herb, not tree-sitter, and carry their own tokens, so
   // they skip the shared node-walking path below entirely.
   if (kind === 'erb') {
-    if (!templateParserReady()) return []
     return extractTemplateUnits(source, filePath, { rubyTokens }).map(unit => ({
       file: filePath,
       startLine: unit.startLine,
