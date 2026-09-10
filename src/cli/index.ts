@@ -18,7 +18,7 @@ import {
 } from '../report/report'
 import { getChangedFiles, findRepoRoot } from '../io/git'
 import { Store } from '../io/store'
-import { loadConfig, resolveExcludes } from '../io/config'
+import { loadConfig, resolveExcludes, minTokensResolver } from '../io/config'
 import { UsageError } from '../errors'
 import { HELP } from './help'
 
@@ -145,10 +145,12 @@ async function runCheck(args: string[]): Promise<void> {
     min: 0,
     max: 1,
   })
-  const minTokens = parseNumberFlag(args, '--min-tokens=', config.minTokens ?? 20, {
-    min: 0,
-    max: 100_000,
-  })
+  // The flag, when present, is one number for every language; otherwise the
+  // config decides, per language or globally.
+  const minTokensFlag = args.some(arg => arg.startsWith('--min-tokens='))
+    ? parseNumberFlag(args, '--min-tokens=', 20, { min: 0, max: 100_000 })
+    : undefined
+  const minTokens = minTokensResolver(config.minTokens, minTokensFlag)
   const showCode = args.includes('--show-code')
   const format = parseFormat(args)
   const failOn = parseFailOn(args)
@@ -161,7 +163,7 @@ async function runCheck(args: string[]): Promise<void> {
     failOn !== null && findings.some(finding => failOn.has(finding.cloneType))
 
   if (all) {
-    const allUnits = store.getAll().filter(unit => unit.tokenCount >= minTokens)
+    const allUnits = store.getAll().filter(unit => unit.tokenCount >= minTokens(unit.language))
     const fileCount = new Set(allUnits.map(unit => unit.file)).size
     process.stderr.write(`Checking ${fileCount} file(s) [all indexed files]\n`)
 

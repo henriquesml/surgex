@@ -27,6 +27,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `--fail-on=type1,type2` gates the exit code on clone type, so a pipeline can
   block on exact copies while only annotating Type-3 near-matches. An unknown
   type is rejected rather than ignored — a gate nobody can spell never fires.
+- `minTokens` accepts a floor per language. Ruby says in three lines what
+  TypeScript says in ten, so a single global floor either lets a pair of
+  two-line accessors through or hides real duplication in the more verbose
+  language.
 - `--max-group-size=N` / `maxGroupSize`, off by default: the larger a clone
   group, the less likely it is an accident. Three copies of a hook is a
   copy-paste; on one Rails monorepo every group of ten or more was generated

@@ -264,7 +264,8 @@ An optional `surgex.json` at the project root sets the defaults for both command
   "presets": ["rails", "tests"],
   "exclude": ["engines/ui/app/components/**"],
   "threshold": 0.8,
-  "minTokens": 30
+  "minTokens": { "ruby": 35, "typescript": 20 },
+  "maxGroupSize": 6
 }
 ```
 
@@ -273,7 +274,7 @@ An optional `surgex.json` at the project root sets the defaults for both command
 | `presets` | Named exclusion sets (below) |
 | `exclude` | Extra globs, matched against project-root relative paths |
 | `threshold` | Default for `--threshold` |
-| `minTokens` | Default for `--min-tokens` |
+| `minTokens` | Default for `--min-tokens`: one number, or a floor per language (`{ "ruby": 35 }`) |
 | `maxGroupSize` | Default for `--max-group-size`; off when unset |
 
 Command-line flags override `threshold` and `minTokens`; `--exclude` adds to the list rather than replacing it.

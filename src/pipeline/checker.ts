@@ -4,7 +4,7 @@ import { detectClones, MAX_UNITS_PER_HASH } from '../core/detector'
 import { groupClones } from '../core/grouping'
 import { fileAtRef } from '../io/git'
 import { Store } from '../io/store'
-import type { CloneGroup, CodeUnit } from '../types'
+import type { CloneGroup, CodeUnit, Language } from '../types'
 
 export interface CheckMatch {
   unit: CodeUnit
@@ -27,7 +27,8 @@ export interface CheckReport {
 
 export interface CheckOptions {
   threshold?: number
-  minTokens?: number
+  // A floor per language: Ruby is terser than TypeScript.
+  minTokens?: number | ((language: Language) => number)
   base?: string
   onProgress?: (current: number, total: number, file: string) => void
 }
@@ -106,10 +107,12 @@ export function checkFiles(
   options: CheckOptions = {},
 ): CheckReport {
   const { threshold = 0.75, minTokens = 20, base, onProgress } = options
+  const floorFor = typeof minTokens === 'function' ? minTokens : () => minTokens
+  const aboveFloor = (unit: CodeUnit) => unit.tokenCount >= floorFor(unit.language)
 
   const params = store.params()
   const excludeFiles = new Set(files.map(f => f.absolutePath))
-  const indexed = store.getAll().filter(u => u.tokenCount >= minTokens)
+  const indexed = store.getAll().filter(aboveFloor)
   const findMatches = buildMatcher(indexed, excludeFiles, threshold)
 
   const results: FileCheckResult[] = []
@@ -118,7 +121,7 @@ export function checkFiles(
   for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
     const { absolutePath, repoRelativePath } = files[fileIndex]
     onProgress?.(fileIndex + 1, files.length, absolutePath)
-    const currentUnits = parseFile(absolutePath, params).filter(u => u.tokenCount >= minTokens)
+    const currentUnits = parseFile(absolutePath, params).filter(aboveFloor)
     if (currentUnits.length === 0) continue
 
     let insertedUnits: CodeUnit[]
@@ -127,7 +130,7 @@ export function checkFiles(
     if (base) {
       const baseSource = fileAtRef(repoRoot, repoRelativePath, base)
       const baseUnits = baseSource
-        ? parseSource(baseSource, absolutePath, params).filter(u => u.tokenCount >= minTokens)
+        ? parseSource(baseSource, absolutePath, params).filter(aboveFloor)
         : []
 
       const baseUnitByKey = occurrenceKeys(baseUnits)

@@ -1,6 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { UsageError } from '../errors'
+import type { Language } from '../types'
 
 export const CONFIG_FILENAME = 'surgex.json'
 
@@ -8,8 +9,27 @@ export interface SurgexConfig {
   presets: string[]
   exclude: string[]
   threshold?: number
-  minTokens?: number
+  minTokens?: MinTokens
   maxGroupSize?: number
+}
+
+// Ruby says in three lines what TypeScript says in ten, so one global floor
+// either lets a pair of two-line accessors through or hides real duplication
+// in the more verbose language. A project can set the floor per language.
+export type MinTokens = number | Partial<Record<Language, number>>
+
+export const DEFAULT_MIN_TOKENS = 20
+
+const LANGUAGES: Language[] = ['typescript', 'ruby', 'erb']
+
+export function minTokensResolver(
+  configured: MinTokens | undefined,
+  override?: number,
+): (language: Language) => number {
+  if (override !== undefined) return () => override
+  if (typeof configured === 'number') return () => configured
+  if (!configured) return () => DEFAULT_MIN_TOKENS
+  return language => configured[language] ?? DEFAULT_MIN_TOKENS
 }
 
 // Paths a framework owns and regenerates. Every app has them, they are
@@ -60,6 +80,28 @@ function readOptionalNumber(value: unknown, field: string, file: string): number
   return value
 }
 
+function readMinTokens(value: unknown, file: string): MinTokens | undefined {
+  if (value === undefined || typeof value === 'number') {
+    return readOptionalNumber(value, 'minTokens', file)
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new UsageError(`${file}: "minTokens" must be a number or an object keyed by language`)
+  }
+  const byLanguage: Partial<Record<Language, number>> = {}
+  for (const [language, floor] of Object.entries(value)) {
+    if (!LANGUAGES.includes(language as Language)) {
+      throw new UsageError(
+        `${file}: unknown language "${language}" in "minTokens" (known: ${LANGUAGES.join(', ')})`,
+      )
+    }
+    if (typeof floor !== 'number') {
+      throw new UsageError(`${file}: "minTokens.${language}" must be a number`)
+    }
+    byLanguage[language as Language] = floor
+  }
+  return byLanguage
+}
+
 // Reads `surgex.json` from the project root. Absent is not an error: a project
 // without one behaves exactly as it did before the file existed.
 export function loadConfig(root: string): SurgexConfig {
@@ -90,7 +132,7 @@ export function loadConfig(root: string): SurgexConfig {
     presets,
     exclude: readArrayOfStrings(data.exclude, 'exclude', file),
     threshold: readOptionalNumber(data.threshold, 'threshold', file),
-    minTokens: readOptionalNumber(data.minTokens, 'minTokens', file),
+    minTokens: readMinTokens(data.minTokens, file),
     maxGroupSize: readOptionalNumber(data.maxGroupSize, 'maxGroupSize', file),
   }
 }
