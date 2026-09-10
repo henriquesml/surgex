@@ -8,7 +8,13 @@ import { isSupportedFile } from '../lang/parser'
 import { detectClones } from '../core/detector'
 import { groupClones } from '../core/grouping'
 import { DEFAULT_PARAMS } from '../core/fingerprint'
-import { formatReport, formatCheckReport, countFindings } from '../report/report'
+import {
+  formatReport,
+  formatCheckReport,
+  scanFindings,
+  checkFindings,
+  type OutputFormat,
+} from '../report/report'
 import { getChangedFiles, findRepoRoot } from '../io/git'
 import { Store } from '../io/store'
 import { loadConfig, resolveExcludes } from '../io/config'
@@ -61,6 +67,40 @@ function isExcluded(repoRelativePath: string, patterns: string[]): boolean {
   return patterns.some(pattern => minimatch(repoRelativePath, pattern, { dot: true }))
 }
 
+const OUTPUT_FORMATS: OutputFormat[] = ['text', 'json', 'github']
+
+function parseFormat(args: string[]): OutputFormat {
+  const value = parseStringFlag(args, '--format=')
+  if (!value) return args.includes('--json') ? 'json' : 'text'
+  if (!OUTPUT_FORMATS.includes(value as OutputFormat)) {
+    throw new UsageError(`Invalid value for --format: expected one of ${OUTPUT_FORMATS.join(', ')}`)
+  }
+  return value as OutputFormat
+}
+
+// `--fail-on=type1,type2` gates on clone type; `--fail-on-found` gates on any.
+// A type nobody can spell is a gate that silently never fires, so unknown
+// names are rejected rather than ignored.
+const CLONE_TYPES = ['Type-1', 'Type-2', 'Type-3']
+
+function parseFailOn(args: string[]): Set<string> | null {
+  const value = parseStringFlag(args, '--fail-on=')
+  if (!value) return args.includes('--fail-on-found') ? new Set(CLONE_TYPES) : null
+
+  const wanted = value
+    .split(',')
+    .map(entry => entry.trim())
+    .filter(Boolean)
+    .map(entry => entry.replace(/^type-?/i, 'Type-'))
+
+  for (const type of wanted) {
+    if (!CLONE_TYPES.includes(type)) {
+      throw new UsageError(`Invalid value for --fail-on: unknown clone type "${type}"`)
+    }
+  }
+  return new Set(wanted)
+}
+
 function requireIndex(store: Store): void {
   if (!store.exists()) {
     throw new UsageError('No index found — run `surgex index` first.')
@@ -109,26 +149,31 @@ async function runCheck(args: string[]): Promise<void> {
     max: 100_000,
   })
   const showCode = args.includes('--show-code')
-  const json = args.includes('--json')
-  const failOnFound = args.includes('--fail-on-found')
+  const format = parseFormat(args)
+  const failOn = parseFailOn(args)
   const maxGroupSize = parseNumberFlag(args, '--max-group-size=', config.maxGroupSize ?? 0, {
     min: 0,
     max: 100_000,
   })
+  const reportOptions = { showCode, format, maxGroupSize }
+  const shouldFail = (findings: Array<{ cloneType: string }>) =>
+    failOn !== null && findings.some(finding => failOn.has(finding.cloneType))
 
   if (all) {
     const allUnits = store.getAll().filter(unit => unit.tokenCount >= minTokens)
     const fileCount = new Set(allUnits.map(unit => unit.file)).size
     process.stderr.write(`Checking ${fileCount} file(s) [all indexed files]\n`)
 
-    const pairs = detectClones(allUnits, { threshold, onProgress: json ? undefined : progress })
+    const pairs = detectClones(allUnits, {
+      threshold,
+      onProgress: format === 'text' ? progress : undefined,
+    })
     clearProgress()
 
     const groups = groupClones(pairs)
-    process.stdout.write(
-      formatReport(groups, { showCode, json, maxGroupSize, repoRoot: store.root }),
-    )
-    if (failOnFound && groups.length > 0) process.exitCode = 1
+    const scanOptions = { ...reportOptions, repoRoot: store.root }
+    process.stdout.write(formatReport(groups, scanOptions))
+    if (shouldFail(scanFindings(groups, scanOptions))) process.exitCode = 1
     return
   }
 
@@ -181,12 +226,12 @@ async function runCheck(args: string[]): Promise<void> {
     threshold,
     minTokens,
     base: from || undefined,
-    onProgress: json ? undefined : progress,
+    onProgress: format === 'text' ? progress : undefined,
   })
   clearProgress()
 
-  process.stdout.write(formatCheckReport(report, repoRoot, { showCode, json, maxGroupSize }))
-  if (failOnFound && countFindings(report, { maxGroupSize }) > 0) process.exitCode = 1
+  process.stdout.write(formatCheckReport(report, repoRoot, reportOptions))
+  if (shouldFail(checkFindings(report, reportOptions))) process.exitCode = 1
 }
 
 async function main(argv: string[]): Promise<void> {

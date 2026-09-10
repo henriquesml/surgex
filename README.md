@@ -209,9 +209,11 @@ Options:
 | `--min-tokens=N` | `20` | Ignore units with fewer normalized tokens |
 | `--show-code` | — | Show structural matches side by side |
 | `--json` | — | Machine-readable JSON output |
+| `--format=<fmt>` | `text` | `text`, `json`, or `github` (annotations) |
 | `--exclude=<glob>` | — | Skip paths; repeatable, adds to `surgex.json` |
 | `--max-group-size=N` | — | Ignore groups larger than N (idiom, not accident) |
 | `--fail-on-found` | — | Exit with code 1 if clones are found (CI gate) |
+| `--fail-on=<types>` | — | Exit 1 only for these clone types, e.g. `type1,type2` |
 
 `check` also detects clones _within the checked files themselves_ — two
 identical new files added in the same branch are reported even though neither
@@ -220,8 +222,15 @@ is in the index yet.
 Using as a CI gate:
 
 ```bash
-surgex check --from=origin/main --fail-on-found --json > clones.json
+# Annotate every finding on the diff, but only block on exact copies.
+surgex check --from=origin/main --format=github --fail-on=type1,type2
 ```
+
+`--format=github` writes GitHub Actions workflow commands to stdout, which the
+runner turns into annotations pinned to the lines of the pull request diff. It
+needs no token and no bot account. `--fail-on` decides separately what blocks:
+a Type-1 copy is indefensible, while a Type-3 near-match is usually worth a
+comment rather than a red check.
 
 Both commands show progress in real time:
 

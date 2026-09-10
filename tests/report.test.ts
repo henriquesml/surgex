@@ -559,3 +559,51 @@ describe('maxGroupSize', () => {
     expect(formatReport([bigGroup], { maxGroupSize: 8 })).toContain('Mailer0')
   })
 })
+
+describe('github output format', () => {
+  const group: CloneGroup = {
+    similarity: 1,
+    units: [
+      makeUnit({
+        type: 'method',
+        file: '/repo/a.rb',
+        name: 'fetch_user',
+        startLine: 5,
+        endLine: 9,
+      }),
+      makeUnit({
+        type: 'method',
+        file: '/repo/b.rb',
+        name: 'fetch_company',
+        startLine: 31,
+        endLine: 35,
+      }),
+    ],
+  }
+
+  it('emits one workflow-command annotation per finding', () => {
+    const out = formatReport([group], { format: 'github', repoRoot: '/repo' })
+    expect(out).toMatch(/^::warning file=a\.rb,line=5,title=[^:]*::/m)
+    expect(out).toContain('fetch_company (b.rb:31)')
+  })
+
+  it('percent-encodes characters that would truncate the command', () => {
+    const out = formatReport(
+      [
+        {
+          similarity: 1,
+          units: [
+            makeUnit({ file: '/repo/a,b.rb', name: 'x', startLine: 1, endLine: 2 }),
+            makeUnit({ file: '/repo/c.rb', name: 'y', startLine: 1, endLine: 2 }),
+          ],
+        },
+      ],
+      { format: 'github', repoRoot: '/repo' },
+    )
+    expect(out).toContain('file=a%2Cb.rb')
+  })
+
+  it('says nothing when there is nothing to report', () => {
+    expect(formatReport([], { format: 'github' })).toBe('')
+  })
+})
