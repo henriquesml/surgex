@@ -99,6 +99,30 @@ export function fileAtRef(repoRoot: string, repoRelativePath: string, ref: strin
   }
 }
 
+// Lists the files git knows about under `dir`: tracked, plus untracked ones
+// that are not ignored. Returns null outside a repository.
+//
+// This is what makes dot-directories safe to read. A plain glob must choose
+// between skipping them entirely — losing real code such as
+// `.rubocop/cop/custom/*.rb` — and walking into gitignored runtime state that
+// can be orders of magnitude larger than the project itself. git already knows
+// the difference.
+export function listRepoFiles(dir: string): string[] | null {
+  const root = findRepoRoot(dir)
+  if (!root) return null
+
+  const output = execFileSync(
+    'git',
+    ['ls-files', '--cached', '--others', '--exclude-standard', '-z', '--end-of-options', dir],
+    { cwd: root, encoding: 'utf8', maxBuffer: 512 * 1024 * 1024 },
+  )
+
+  return output
+    .split('\0')
+    .filter(Boolean)
+    .map(relativePath => path.join(root, relativePath))
+}
+
 // Finds the git repository root containing `dir`, or null if not in a repo.
 export function findRepoRoot(dir: string): string | null {
   try {
