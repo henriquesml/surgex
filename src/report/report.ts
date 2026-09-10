@@ -75,15 +75,18 @@ function dropContainedGroups(groups: CloneGroup[]): CloneGroup[] {
     outer.startLine <= inner.startLine &&
     outer.endLine >= inner.endLine
 
+  const coveredBy = (inner: CloneGroup, outer: CloneGroup) =>
+    inner.units.every(unit => outer.units.some(candidate => contains(candidate, unit)))
+
   return groups.filter(
     (group, index) =>
       !groups.some(
         (other, otherIndex) =>
           otherIndex !== index &&
-          other.units.length >= group.units.length &&
-          // ties would drop both halves of a mutually contained pair
-          (other.units.length > group.units.length || otherIndex < index) &&
-          group.units.every(unit => other.units.some(candidate => contains(candidate, unit))),
+          coveredBy(group, other) &&
+          // Two groups that cover each other say the same thing; keep the first
+          // rather than dropping both halves of the pair.
+          (!coveredBy(other, group) || otherIndex < index),
       ),
   )
 }
