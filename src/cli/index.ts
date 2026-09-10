@@ -111,6 +111,10 @@ async function runCheck(args: string[]): Promise<void> {
   const showCode = args.includes('--show-code')
   const json = args.includes('--json')
   const failOnFound = args.includes('--fail-on-found')
+  const maxGroupSize = parseNumberFlag(args, '--max-group-size=', config.maxGroupSize ?? 0, {
+    min: 0,
+    max: 100_000,
+  })
 
   if (all) {
     const allUnits = store.getAll().filter(unit => unit.tokenCount >= minTokens)
@@ -121,7 +125,9 @@ async function runCheck(args: string[]): Promise<void> {
     clearProgress()
 
     const groups = groupClones(pairs)
-    process.stdout.write(formatReport(groups, { showCode, json, repoRoot: store.root }))
+    process.stdout.write(
+      formatReport(groups, { showCode, json, maxGroupSize, repoRoot: store.root }),
+    )
     if (failOnFound && groups.length > 0) process.exitCode = 1
     return
   }
@@ -179,8 +185,8 @@ async function runCheck(args: string[]): Promise<void> {
   })
   clearProgress()
 
-  process.stdout.write(formatCheckReport(report, repoRoot, { showCode, json }))
-  if (failOnFound && countFindings(report) > 0) process.exitCode = 1
+  process.stdout.write(formatCheckReport(report, repoRoot, { showCode, json, maxGroupSize }))
+  if (failOnFound && countFindings(report, { maxGroupSize }) > 0) process.exitCode = 1
 }
 
 async function main(argv: string[]): Promise<void> {

@@ -210,6 +210,7 @@ Options:
 | `--show-code` | — | Show structural matches side by side |
 | `--json` | — | Machine-readable JSON output |
 | `--exclude=<glob>` | — | Skip paths; repeatable, adds to `surgex.json` |
+| `--max-group-size=N` | — | Ignore groups larger than N (idiom, not accident) |
 | `--fail-on-found` | — | Exit with code 1 if clones are found (CI gate) |
 
 `check` also detects clones _within the checked files themselves_ — two
@@ -250,6 +251,7 @@ An optional `surgex.json` at the project root sets the defaults for both command
 | `exclude` | Extra globs, matched against project-root relative paths |
 | `threshold` | Default for `--threshold` |
 | `minTokens` | Default for `--min-tokens` |
+| `maxGroupSize` | Default for `--max-group-size`; off when unset |
 
 Command-line flags override `threshold` and `minTokens`; `--exclude` adds to the list rather than replacing it.
 

@@ -57,10 +57,19 @@ function dropSiblingBlocks(groups: CloneGroup[]): CloneGroup[] {
   })
 }
 
+// The larger a clone group, the less likely it is an accident. Three copies of
+// a hook is a copy-paste; thirty identical Rails mailer layouts, generated
+// migrations or value objects are a convention the codebase chose. Off by
+// default — a project sets `maxGroupSize` once it knows its own shape.
+function dropIdiomGroups(groups: CloneGroup[], maxGroupSize?: number): CloneGroup[] {
+  if (!maxGroupSize) return groups
+  return groups.filter(group => group.units.length <= maxGroupSize)
+}
+
 // Every reported group goes through here, so `check` and `check --all` agree
 // on what counts as a finding.
-function presentableGroups(groups: CloneGroup[]): CloneGroup[] {
-  return dropSiblingBlocks(dropContainedUnits(groups))
+function presentableGroups(groups: CloneGroup[], maxGroupSize?: number): CloneGroup[] {
+  return dropIdiomGroups(dropSiblingBlocks(dropContainedUnits(groups)), maxGroupSize)
 }
 
 function toJson(display: DisplayGroup[], rel: (f: string) => string): string {
@@ -92,7 +101,7 @@ function relativizer(root: string): (file: string) => string {
 // ── full-scan report (`check --all`): CloneGroup[] → formatted string ───────
 
 export function formatReport(rawGroups: CloneGroup[], options: ReportOptions = {}): string {
-  const groups = presentableGroups(rawGroups)
+  const groups = presentableGroups(rawGroups, options.maxGroupSize)
   const files = [...new Set(groups.flatMap(group => group.units.map(unit => unit.file)))]
   const root = options.repoRoot ?? commonDirPrefix(files)
   const shortDir = (dirFiles: string[]) => {
@@ -162,7 +171,7 @@ export function formatCheckReport(
     }
   }
 
-  for (const group of presentableGroups(report.internal)) {
+  for (const group of presentableGroups(report.internal, options.maxGroupSize)) {
     display.push({
       similarity: group.similarity,
       cloneType: cloneType(group.similarity, group.units),
@@ -175,11 +184,13 @@ export function formatCheckReport(
   return formatGroups(display, { ...options, repoRoot })
 }
 
-// Number of findings — used by the CLI for `--fail-on-found`.
-export function countFindings(report: CheckReport): number {
+// Number of findings — used by the CLI for `--fail-on-found`. Takes the same
+// options the report does: a gate that failed on groups the report never
+// printed would be impossible to act on.
+export function countFindings(report: CheckReport, options: ReportOptions = {}): number {
   const fileMatches = report.files.reduce(
     (total, file) => total + file.insertions.length + file.modifications.length,
     0,
   )
-  return fileMatches + presentableGroups(report.internal).length
+  return fileMatches + presentableGroups(report.internal, options.maxGroupSize).length
 }

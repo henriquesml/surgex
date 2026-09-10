@@ -16,6 +16,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `exclude`, `threshold` and `minTokens`. Two presets ship: `rails` (paths the
   framework owns and regenerates) and `tests`.
 - `--exclude=<glob>` on `index` and `check`, repeatable, additive to the config.
+- `--max-group-size=N` / `maxGroupSize`, off by default: the larger a clone
+  group, the less likely it is an accident. Three copies of a hook is a
+  copy-paste; on one Rails monorepo every group of ten or more was generated
+  output, migrations or value objects — a convention, not a mistake.
 
 ### Changed
 - Inside a git repository the file walk is driven by `git ls-files` (tracked

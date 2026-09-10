@@ -9,6 +9,7 @@ export interface SurgexConfig {
   exclude: string[]
   threshold?: number
   minTokens?: number
+  maxGroupSize?: number
 }
 
 // Paths a framework owns and regenerates. Every app has them, they are
@@ -90,6 +91,7 @@ export function loadConfig(root: string): SurgexConfig {
     exclude: readArrayOfStrings(data.exclude, 'exclude', file),
     threshold: readOptionalNumber(data.threshold, 'threshold', file),
     minTokens: readOptionalNumber(data.minTokens, 'minTokens', file),
+    maxGroupSize: readOptionalNumber(data.maxGroupSize, 'maxGroupSize', file),
   }
 }
 

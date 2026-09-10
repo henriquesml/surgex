@@ -538,3 +538,24 @@ describe('sibling DSL blocks', () => {
     expect(out).toContain('fetch_user')
   })
 })
+
+describe('maxGroupSize', () => {
+  const bigGroup: CloneGroup = {
+    similarity: 1,
+    units: Array.from({ length: 8 }, (_, index) =>
+      makeUnit({ type: 'class', file: `app${index}/mailer.rb`, name: `Mailer${index}` }),
+    ),
+  }
+
+  it('reports a large group when no ceiling is set', () => {
+    expect(formatReport([bigGroup])).toContain('Mailer0')
+  })
+
+  it('drops a group past the ceiling', () => {
+    expect(formatReport([bigGroup], { maxGroupSize: 6 })).toContain('No similar code found')
+  })
+
+  it('keeps a group at the ceiling', () => {
+    expect(formatReport([bigGroup], { maxGroupSize: 8 })).toContain('Mailer0')
+  })
+})
