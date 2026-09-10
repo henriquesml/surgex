@@ -7,6 +7,60 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Ruby `module` and DSL blocks (`test "..." do`, `included do`, `namespace :x do`)
+  are now code units. Rails concerns and block-style test suites were previously
+  invisible: a file holding two structurally identical concerns produced zero
+  units and could never be reported.
+- `.rake`, `.gemspec`, `.ru`, `.jbuilder` and `Rakefile` are read as Ruby.
+- ERB templates are parsed, via [Herb](https://herb-tools.dev). A template
+  yields a unit for the whole file and one per ERB block. On a Rails monorepo
+  this surfaced a mailer component library copy-pasted between two apps, four
+  identical `document_update_request` mailers, and three identical index views
+  — none of which any earlier version could see.
+- `surgex.json` at the project root sets defaults for both commands: `presets`,
+  `exclude`, `threshold` and `minTokens`. Two presets ship: `rails` (paths the
+  framework owns and regenerates) and `tests`.
+- `--exclude=<glob>` on `index` and `check`, repeatable, additive to the config.
+- `--format=text|json|github`. `github` emits `::warning file=…,line=…::`
+  workflow commands, so findings land as annotations on the pull request diff
+  with no token, no API call and no bot account.
+- `--fail-on=type1,type2` gates the exit code on clone type, so a pipeline can
+  block on exact copies while only annotating Type-3 near-matches. An unknown
+  type is rejected rather than ignored — a gate nobody can spell never fires.
+- `minTokens` accepts a floor per language. Ruby says in three lines what
+  TypeScript says in ten, so a single global floor either lets a pair of
+  two-line accessors through or hides real duplication in the more verbose
+  language.
+- `--max-group-size=N` / `maxGroupSize`, off by default: the larger a clone
+  group, the less likely it is an accident. Three copies of a hook is a
+  copy-paste; on one Rails monorepo every group of ten or more was generated
+  output, migrations or value objects — a convention, not a mistake.
+
+### Changed
+- Inside a git repository the file walk is driven by `git ls-files` (tracked
+  plus untracked-but-not-ignored) rather than a glob, so `.gitignore` is
+  honoured. A plain glob had to choose between skipping every dot-directory —
+  losing real code such as `.rubocop/cop/custom/*.rb` — and walking into
+  ignored runtime state orders of magnitude larger than the project.
+- A clone group whose units all sit inside the units of another group is no
+  longer reported: four identical templates were reported once as templates and
+  again as the blocks inside them.
+- Sibling DSL blocks in a single file are no longer reported. A table-driven
+  test repeats a shape on purpose, and on a Rails monorepo those groups were
+  nearly every finding a pull request produced — 9 of 9 on one diff, 2 of which
+  survive the rule and are both real. The same block duplicated across files
+  is a different claim and is still reported.
+- A class or module whose body holds only nested definitions is treated as a
+  namespace shell and is no longer a unit. `module RuboCop; module Cop; class X`
+  reported the outer wrapper, so every namespace matched every other namespace
+  and the real finding was labelled `RuboCop`.
+- Index format bumped to v4; `INDEX_VERSION` is exported so tests track it.
+
+### Fixed
+- `surgex index` no longer refuses to run against an index written by another
+  version or a corrupted one. It reported "re-run `surgex index`" — the command
+  that had just failed — leaving no way forward but deleting `.surgex/` by hand.
+
 - Incremental indexing: `surgex index` stores each file's mtime and size in
   the index (format v3) and only re-parses files that changed since the last
   run; deleted files drop out automatically. The cache is bypassed when the

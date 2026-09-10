@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
+import { execFileSync } from 'child_process'
 import { Store } from '../src/io/store'
-import { indexPaths } from '../src/pipeline/indexer'
+import { indexPaths, collectFiles } from '../src/pipeline/indexer'
 
 const FN = (name: string) => `export function ${name}(token: string) {
   const items = fetchData(token)
@@ -155,5 +156,52 @@ describe('indexPaths — incremental', () => {
     } finally {
       fs.rmSync(path.join(tmp, 'src/a.ts')) // remove the symlink so afterEach cleanup works
     }
+  })
+})
+
+describe('collectFiles', () => {
+  // The shared `tmp` already holds src/*.ts fixtures, so these walk a subtree
+  // of their own.
+  let base: string
+  beforeEach(() => {
+    base = path.join(tmp, 'walk')
+    fs.mkdirSync(base)
+  })
+
+  it('falls back to a glob outside a git repository, dot-directories included', async () => {
+    fs.mkdirSync(path.join(base, '.rubocop'))
+    fs.mkdirSync(path.join(base, 'node_modules'))
+    fs.writeFileSync(path.join(base, 'a.rb'), 'class A; end')
+    fs.writeFileSync(path.join(base, '.rubocop/cop.rb'), 'class B; end')
+    fs.writeFileSync(path.join(base, 'node_modules/dep.rb'), 'class C; end')
+    fs.writeFileSync(path.join(base, 'notes.md'), '# not source')
+
+    const found = (await collectFiles(base)).map(file => path.basename(file)).sort()
+
+    expect(found).toEqual(['a.rb', 'cop.rb'])
+  })
+
+  it('takes the listing from git inside a repository, so .gitignore decides', async () => {
+    execFileSync('git', ['init'], { cwd: base, stdio: 'pipe' })
+    fs.writeFileSync(path.join(base, '.gitignore'), 'build/\n')
+    fs.mkdirSync(path.join(base, 'build'))
+    fs.mkdirSync(path.join(base, '.rubocop'))
+    fs.writeFileSync(path.join(base, 'a.rb'), 'class A; end')
+    fs.writeFileSync(path.join(base, 'build/generated.rb'), 'class B; end')
+    fs.writeFileSync(path.join(base, '.rubocop/cop.rb'), 'class C; end')
+
+    const found = (await collectFiles(base)).map(file => path.basename(file)).sort()
+
+    expect(found).toEqual(['a.rb', 'cop.rb'])
+  })
+
+  it('applies the exclude globs against project-root relative paths', async () => {
+    fs.mkdirSync(path.join(base, 'generated'))
+    fs.writeFileSync(path.join(base, 'a.rb'), 'class A; end')
+    fs.writeFileSync(path.join(base, 'generated/b.rb'), 'class B; end')
+
+    const found = await collectFiles(base, { exclude: ['generated/**'] })
+
+    expect(found.map(file => path.basename(file))).toEqual(['a.rb'])
   })
 })

@@ -1,15 +1,24 @@
 #!/usr/bin/env node
 import * as path from 'path'
 import * as fs from 'fs'
-import { glob } from 'glob'
-import { indexPaths, FILE_PATTERNS, IGNORE } from '../pipeline/indexer'
+import { minimatch } from 'minimatch'
+import { indexPaths, collectFiles } from '../pipeline/indexer'
 import { checkFiles } from '../pipeline/checker'
+import { isSupportedFile } from '../lang/parser'
+import { loadTemplateParser } from '../lang/template'
 import { detectClones } from '../core/detector'
 import { groupClones } from '../core/grouping'
 import { DEFAULT_PARAMS } from '../core/fingerprint'
-import { formatReport, formatCheckReport, countFindings } from '../report/report'
+import {
+  formatReport,
+  formatCheckReport,
+  scanFindings,
+  checkFindings,
+  type OutputFormat,
+} from '../report/report'
 import { getChangedFiles, findRepoRoot } from '../io/git'
 import { Store } from '../io/store'
+import { loadConfig, resolveExcludes, minTokensResolver } from '../io/config'
 import { UsageError } from '../errors'
 import { HELP } from './help'
 
@@ -30,6 +39,11 @@ function parseNumberFlag(
   return value
 }
 
+// Repeatable flag: `--exclude=a/** --exclude=b/**` collects both.
+function parseRepeatedFlag(args: string[], prefix: string): string[] {
+  return args.filter(arg => arg.startsWith(prefix)).map(arg => arg.slice(prefix.length))
+}
+
 function parseStringFlag(args: string[], prefix: string): string {
   const match = args.find(arg => arg.startsWith(prefix))
   return match ? match.slice(prefix.length) : ''
@@ -48,6 +62,46 @@ const progress = (current: number, total: number, label: string) => {
 
 const clearProgress = () => process.stderr.write('\x1b[2K\r')
 
+// Changed files come from git as repo-relative paths, so the config's globs
+// apply directly — no need to route them back through collectFiles.
+function isExcluded(repoRelativePath: string, patterns: string[]): boolean {
+  return patterns.some(pattern => minimatch(repoRelativePath, pattern, { dot: true }))
+}
+
+const OUTPUT_FORMATS: OutputFormat[] = ['text', 'json', 'github']
+
+function parseFormat(args: string[]): OutputFormat {
+  const value = parseStringFlag(args, '--format=')
+  if (!value) return args.includes('--json') ? 'json' : 'text'
+  if (!OUTPUT_FORMATS.includes(value as OutputFormat)) {
+    throw new UsageError(`Invalid value for --format: expected one of ${OUTPUT_FORMATS.join(', ')}`)
+  }
+  return value as OutputFormat
+}
+
+// `--fail-on=type1,type2` gates on clone type; `--fail-on-found` gates on any.
+// A type nobody can spell is a gate that silently never fires, so unknown
+// names are rejected rather than ignored.
+const CLONE_TYPES = ['Type-1', 'Type-2', 'Type-3']
+
+function parseFailOn(args: string[]): Set<string> | null {
+  const value = parseStringFlag(args, '--fail-on=')
+  if (!value) return args.includes('--fail-on-found') ? new Set(CLONE_TYPES) : null
+
+  const wanted = value
+    .split(',')
+    .map(entry => entry.trim())
+    .filter(Boolean)
+    .map(entry => entry.replace(/^type-?/i, 'Type-'))
+
+  for (const type of wanted) {
+    if (!CLONE_TYPES.includes(type)) {
+      throw new UsageError(`Invalid value for --fail-on: unknown clone type "${type}"`)
+    }
+  }
+  return new Set(wanted)
+}
+
 function requireIndex(store: Store): void {
   if (!store.exists()) {
     throw new UsageError('No index found — run `surgex index` first.')
@@ -62,12 +116,14 @@ async function runIndex(args: string[]): Promise<void> {
   const windowSize = parseNumberFlag(args, '--window=', DEFAULT_PARAMS.w, { min: 1, max: 50 })
   const store = Store.discover()
   const paths = targetPaths.length ? targetPaths : [process.cwd()]
+  const exclude = resolveExcludes(loadConfig(store.root), parseRepeatedFlag(args, '--exclude='))
 
   console.log(`Indexing: ${paths.join(', ')}`)
   const stats = await indexPaths(paths, store, {
     verbose,
     params: { k: kGramSize, w: windowSize },
     force,
+    exclude,
   })
   const cacheNote = stats.reused > 0 ? `, ${stats.reused} unchanged from cache` : ''
   console.log(
@@ -80,25 +136,47 @@ async function runCheck(args: string[]): Promise<void> {
   const store = Store.discover()
   requireIndex(store)
 
+  const config = loadConfig(store.root)
+  const exclude = resolveExcludes(config, parseRepeatedFlag(args, '--exclude='))
+
   const all = args.includes('--all')
   const from = parseStringFlag(args, '--from=')
-  const threshold = parseNumberFlag(args, '--threshold=', 0.75, { min: 0, max: 1 })
-  const minTokens = parseNumberFlag(args, '--min-tokens=', 20, { min: 0, max: 100_000 })
+  const threshold = parseNumberFlag(args, '--threshold=', config.threshold ?? 0.75, {
+    min: 0,
+    max: 1,
+  })
+  // The flag, when present, is one number for every language; otherwise the
+  // config decides, per language or globally.
+  const minTokensFlag = args.some(arg => arg.startsWith('--min-tokens='))
+    ? parseNumberFlag(args, '--min-tokens=', 20, { min: 0, max: 100_000 })
+    : undefined
+  const minTokens = minTokensResolver(config.minTokens, minTokensFlag)
   const showCode = args.includes('--show-code')
-  const json = args.includes('--json')
-  const failOnFound = args.includes('--fail-on-found')
+  const format = parseFormat(args)
+  const failOn = parseFailOn(args)
+  const maxGroupSize = parseNumberFlag(args, '--max-group-size=', config.maxGroupSize ?? 0, {
+    min: 0,
+    max: 100_000,
+  })
+  const reportOptions = { showCode, format, maxGroupSize }
+  const shouldFail = (findings: Array<{ cloneType: string }>) =>
+    failOn !== null && findings.some(finding => failOn.has(finding.cloneType))
 
   if (all) {
-    const allUnits = store.getAll().filter(unit => unit.tokenCount >= minTokens)
+    const allUnits = store.getAll().filter(unit => unit.tokenCount >= minTokens(unit.language))
     const fileCount = new Set(allUnits.map(unit => unit.file)).size
     process.stderr.write(`Checking ${fileCount} file(s) [all indexed files]\n`)
 
-    const pairs = detectClones(allUnits, { threshold, onProgress: json ? undefined : progress })
+    const pairs = detectClones(allUnits, {
+      threshold,
+      onProgress: format === 'text' ? progress : undefined,
+    })
     clearProgress()
 
     const groups = groupClones(pairs)
-    process.stdout.write(formatReport(groups, { showCode, json, repoRoot: store.root }))
-    if (failOnFound && groups.length > 0) process.exitCode = 1
+    const scanOptions = { ...reportOptions, repoRoot: store.root }
+    process.stdout.write(formatReport(groups, scanOptions))
+    if (shouldFail(scanFindings(groups, scanOptions))) process.exitCode = 1
     return
   }
 
@@ -115,11 +193,7 @@ async function runCheck(args: string[]): Promise<void> {
     for (const arg of explicitFiles) {
       const absolutePath = path.resolve(arg)
       if (fs.statSync(absolutePath, { throwIfNoEntry: false })?.isDirectory()) {
-        const files = await glob(FILE_PATTERNS, {
-          cwd: absolutePath,
-          absolute: true,
-          ignore: IGNORE,
-        })
+        const files = await collectFiles(absolutePath, { exclude })
         for (const file of files) {
           expandedFiles.push({
             absolutePath: file,
@@ -138,7 +212,9 @@ async function runCheck(args: string[]): Promise<void> {
   } else {
     const gitContext = getChangedFiles(process.cwd(), from || undefined)
     repoRoot = gitContext.repoRoot
-    relevant = gitContext.changedFiles.filter(file => /\.(ts|tsx|rb)$/.test(file.absolutePath))
+    relevant = gitContext.changedFiles.filter(
+      file => isSupportedFile(file.absolutePath) && !isExcluded(file.repoRelativePath, exclude),
+    )
     label = from ? `branch diff vs ${from}` : 'uncommitted changes'
   }
 
@@ -153,16 +229,23 @@ async function runCheck(args: string[]): Promise<void> {
     threshold,
     minTokens,
     base: from || undefined,
-    onProgress: json ? undefined : progress,
+    onProgress: format === 'text' ? progress : undefined,
   })
   clearProgress()
 
-  process.stdout.write(formatCheckReport(report, repoRoot, { showCode, json }))
-  if (failOnFound && countFindings(report) > 0) process.exitCode = 1
+  process.stdout.write(formatCheckReport(report, repoRoot, reportOptions))
+  if (shouldFail(checkFindings(report, reportOptions))) process.exitCode = 1
 }
 
 async function main(argv: string[]): Promise<void> {
   const [command, ...args] = argv
+
+  // Herb is WebAssembly and instantiates asynchronously, while everything
+  // downstream parses synchronously. Loading it once here keeps that boundary
+  // in one place instead of threading a promise through the pipeline.
+  if (command === 'index' || command === 'check' || command === 'report') {
+    await loadTemplateParser()
+  }
 
   switch (command) {
     case 'index':

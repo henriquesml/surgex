@@ -3,7 +3,7 @@ import { execFileSync } from 'child_process'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { Store } from '../src/io/store'
+import { Store, INDEX_VERSION } from '../src/io/store'
 import { UsageError } from '../src/errors'
 import type { CodeUnit } from '../src/types'
 
@@ -73,7 +73,12 @@ describe('Store', () => {
     fs.mkdirSync(path.join(tmp, '.surgex'))
     fs.writeFileSync(
       path.join(tmp, '.surgex/index.json'),
-      JSON.stringify({ version: 3, params: { k: 5, w: 4 }, files: {}, units: [{ bogus: true }] }),
+      JSON.stringify({
+        version: INDEX_VERSION,
+        params: { k: 5, w: 4 },
+        files: {},
+        units: [{ bogus: true }],
+      }),
     )
     expect(() => new Store(path.join(tmp, '.surgex')).getAll()).toThrow(/malformed unit/)
   })
@@ -83,7 +88,7 @@ describe('Store', () => {
     fs.writeFileSync(
       path.join(tmp, '.surgex/index.json'),
       JSON.stringify({
-        version: 3,
+        version: INDEX_VERSION,
         params: { k: 5, w: 4 },
         files: { 'a.ts': { mtimeMs: 'nope' } },
         units: [],
@@ -151,6 +156,31 @@ describe('Store', () => {
     it('returns null when no index exists', () => {
       expect(new Store(path.join(tmp, '.surgex')).fileCache({ k: 5, w: 4 })).toBeNull()
     })
+
+    // `index` is the command that repairs the index. If it refused to run on an
+    // index written by an older surgex, upgrading would dead-end: the error
+    // tells you to re-run the very command that just failed.
+    it('returns null instead of throwing on an index from another version', () => {
+      const dir = path.join(tmp, '.surgex')
+      fs.mkdirSync(dir, { recursive: true })
+      fs.writeFileSync(
+        path.join(dir, 'index.json'),
+        JSON.stringify({
+          version: INDEX_VERSION - 1,
+          params: { k: 5, w: 4 },
+          files: {},
+          units: [],
+        }),
+      )
+      expect(new Store(dir).fileCache({ k: 5, w: 4 })).toBeNull()
+    })
+
+    it('returns null instead of throwing on a corrupted index', () => {
+      const dir = path.join(tmp, '.surgex')
+      fs.mkdirSync(dir, { recursive: true })
+      fs.writeFileSync(path.join(dir, 'index.json'), 'not json')
+      expect(new Store(dir).fileCache({ k: 5, w: 4 })).toBeNull()
+    })
   })
 
   it('writes the index atomically, leaving no temp file behind', () => {
@@ -191,7 +221,7 @@ describe('Store', () => {
     fs.mkdirSync(path.join(tmp, '.surgex'))
     fs.writeFileSync(
       path.join(tmp, '.surgex/index.json'),
-      JSON.stringify({ version: 3, params: { k: 5, w: 4 }, files: [], units: [] }),
+      JSON.stringify({ version: INDEX_VERSION, params: { k: 5, w: 4 }, files: [], units: [] }),
     )
     expect(() => new Store(path.join(tmp, '.surgex')).getAll()).toThrow(/files is not an object/)
   })
@@ -200,7 +230,7 @@ describe('Store', () => {
     fs.mkdirSync(path.join(tmp, '.surgex'))
     fs.writeFileSync(
       path.join(tmp, '.surgex/index.json'),
-      JSON.stringify({ version: 3, params: null, files: {}, units: [] }),
+      JSON.stringify({ version: INDEX_VERSION, params: null, files: {}, units: [] }),
     )
     expect(() => new Store(path.join(tmp, '.surgex')).getAll()).toThrow(
       /missing fingerprint params/,
@@ -211,7 +241,7 @@ describe('Store', () => {
     fs.mkdirSync(path.join(tmp, '.surgex'))
     fs.writeFileSync(
       path.join(tmp, '.surgex/index.json'),
-      JSON.stringify({ version: 3, params: { k: 5, w: 4 }, files: {}, units: {} }),
+      JSON.stringify({ version: INDEX_VERSION, params: { k: 5, w: 4 }, files: {}, units: {} }),
     )
     expect(() => new Store(path.join(tmp, '.surgex')).getAll()).toThrow(/units is not an array/)
   })
@@ -222,7 +252,7 @@ describe('Store', () => {
     fs.writeFileSync(
       path.join(tmp, '.surgex/index.json'),
       JSON.stringify({
-        version: 3,
+        version: INDEX_VERSION,
         params: { k: 5, w: 4 },
         files: {},
         units: [{ ...makeUnit(absoluteFile), id: 1 }],

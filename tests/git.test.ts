@@ -3,7 +3,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { execFileSync } from 'child_process'
-import { getChangedFiles, fileAtRef, findRepoRoot } from '../src/io/git'
+import { getChangedFiles, fileAtRef, findRepoRoot, listRepoFiles } from '../src/io/git'
 import { UsageError } from '../src/errors'
 
 let tmp: string
@@ -145,5 +145,37 @@ describe('fileAtRef', () => {
   it('rejects a ref that looks like a git option (argument injection)', () => {
     initRepo(tmp)
     expect(() => fileAtRef(tmp, 'a.ts', '--output=x')).toThrow(UsageError)
+  })
+})
+
+describe('listRepoFiles', () => {
+  it('lists tracked and untracked files but not ignored ones', () => {
+    initRepo(tmp)
+    fs.writeFileSync(path.join(tmp, '.gitignore'), 'ignored/\n')
+    fs.mkdirSync(path.join(tmp, 'ignored'))
+    fs.mkdirSync(path.join(tmp, '.rubocop'))
+    fs.writeFileSync(path.join(tmp, 'tracked.rb'), 'class A; end')
+    fs.writeFileSync(path.join(tmp, 'ignored/huge.rb'), 'class B; end')
+    // Real code under a dot-directory is exactly what a bare glob used to lose.
+    fs.writeFileSync(path.join(tmp, '.rubocop/cop.rb'), 'class C; end')
+    git(['add', 'tracked.rb'], tmp)
+    git(['commit', '-m', 'first'], tmp)
+    fs.writeFileSync(path.join(tmp, 'untracked.rb'), 'class D; end')
+
+    // git reports the resolved repository root, so on macOS, where /var is a
+    // symlink to /private/var, the listing is anchored there too.
+    const root = fs.realpathSync(tmp)
+    const listed = listRepoFiles(tmp)!
+      .map(file => path.relative(root, file))
+      .sort()
+
+    expect(listed).toContain('tracked.rb')
+    expect(listed).toContain('untracked.rb')
+    expect(listed).toContain('.rubocop/cop.rb')
+    expect(listed).not.toContain('ignored/huge.rb')
+  })
+
+  it('returns null outside a repository', () => {
+    expect(listRepoFiles(tmp)).toBeNull()
   })
 })

@@ -28,10 +28,13 @@ interface IndexData {
   units: StoredUnit[]
 }
 
-// Bumped to 3 when symbol/identifier normalization changed (Ruby instance
-// variables and symbols, TS destructuring shorthand): fingerprints from older
-// indexes no longer match, so they are rejected and a re-index is required.
-const INDEX_VERSION = 3
+// Bumped whenever parsing or normalization changes what a unit is or how it
+// fingerprints — an index written by an older surgex would otherwise be reused
+// silently and compared against fingerprints it can no longer match.
+//   3: symbol/identifier normalization (Ruby ivars and symbols, TS shorthand)
+//   4: Ruby modules and DSL blocks became units; namespace shells stopped being
+//      units; the file walk started going through git
+export const INDEX_VERSION = 4
 
 // Persists the fingerprint index to <dir>/index.json.
 //
@@ -141,11 +144,23 @@ export class Store {
 
   // Per-file parse cache for incremental indexing: every indexed file (keyed
   // by absolute path) with its stat snapshot and previously parsed units.
-  // Returns null when there is no usable cache — no index yet, or it was
-  // built with different fingerprint params (fingerprints wouldn't match).
+  // Returns null when there is no usable cache — no index yet, one written by
+  // a different surgex version, a corrupted file, or different fingerprint
+  // params (fingerprints wouldn't match).
+  //
+  // Unreadable is not fatal here: `index` is the command that repairs the
+  // index, so it re-parses from scratch rather than refusing to run. `check`,
+  // which can only read, still reports the problem.
   fileCache(params: FingerprintParams): Map<string, FileCacheEntry> | null {
     if (!this.exists()) return null
-    const data = this.read()
+
+    let data: IndexData
+    try {
+      data = this.read()
+    } catch {
+      return null
+    }
+
     if (data.params.k !== params.k || data.params.w !== params.w) return null
 
     const unitsByFile = new Map<string, CodeUnit[]>()

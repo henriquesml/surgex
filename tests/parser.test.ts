@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { parseSource, parseFile } from '../src/lang/parser'
+import { parseSource, parseFile, sourceKind, isSupportedFile, rubyTokens } from '../src/lang/parser'
 
 let tmp: string
 beforeEach(() => {
@@ -184,5 +184,121 @@ describe('parseFile', () => {
 
   it('returns [] when the file does not exist', () => {
     expect(parseFile(path.join(tmp, 'missing.ts'))).toEqual([])
+  })
+})
+
+describe('parseSource — Ruby beyond `def`', () => {
+  it('extracts modules, which carry Rails concerns', () => {
+    const src = ['module Withdrawable', '  extend ActiveSupport::Concern', 'end'].join('\n')
+    expect(names(src, 'a.rb')).toContain('Withdrawable:module')
+  })
+
+  it('extracts DSL blocks, named by their first string or symbol argument', () => {
+    const src = [
+      'class OrderTest < ActiveSupport::TestCase',
+      '  test "a settled payout hides the button" do',
+      '    assert true',
+      '  end',
+      'end',
+    ].join('\n')
+    expect(names(src, 'a.rb')).toContain('a settled payout hides the button:block')
+  })
+
+  it('falls back to the DSL method name when the first argument is not a label', () => {
+    const src = ['class A', '  retry_on(TimeoutError) do', '    x', '  end', 'end'].join('\n')
+    expect(names(src, 'a.rb')).toContain('retry_on:block')
+  })
+
+  it('falls back to the DSL method name when the label is empty', () => {
+    const src = ['class A', '  test "" do', '    x', '  end', 'end'].join('\n')
+    expect(names(src, 'a.rb')).toContain('test:block')
+  })
+
+  it('falls back to the DSL method name for a block with no arguments', () => {
+    const src = ['module M', '  included do', '    has_many :items', '  end', 'end'].join('\n')
+    expect(names(src, 'a.rb')).toContain('included:block')
+  })
+
+  it('ignores blocks inside a method body, which the method unit already covers', () => {
+    const src = [
+      'class A',
+      '  def run',
+      '    rows.each do |row|',
+      '      row.save',
+      '    end',
+      '  end',
+      'end',
+    ].join('\n')
+    expect(names(src, 'a.rb')).not.toContain('each:block')
+  })
+
+  it('skips namespace shells so the nested definition is the reported unit', () => {
+    const src = [
+      'module RuboCop',
+      '  module Cop',
+      '    class LaunchdarklySnakeCase',
+      '      def on_send(node); node; end',
+      '    end',
+      '  end',
+      'end',
+    ].join('\n')
+    const got = names(src, 'a.rb')
+    expect(got).not.toContain('RuboCop:module')
+    expect(got).not.toContain('Cop:module')
+    expect(got).toContain('LaunchdarklySnakeCase:class')
+  })
+
+  it('keeps a class with an empty body — a shell is about nesting, not emptiness', () => {
+    expect(names('class Empty\nend', 'a.rb')).toContain('Empty:class')
+  })
+
+  it('keeps a module that holds code of its own', () => {
+    const src = [
+      'module M',
+      '  extend ActiveSupport::Concern',
+      '  included do',
+      '    x',
+      '  end',
+      'end',
+    ].join('\n')
+    expect(names(src, 'a.rb')).toContain('M:module')
+  })
+})
+
+describe('sourceKind — Ruby is not only .rb', () => {
+  it.each([
+    'a.rb',
+    'lib/tasks/sync.rake',
+    'surgex.gemspec',
+    'config.ru',
+    'views/show.jbuilder',
+    'Rakefile',
+  ])('reads %s as Ruby', file => {
+    expect(isSupportedFile(file)).toBe(true)
+    expect(sourceKind(file)).toBe('ruby')
+  })
+
+  it('leaves unsupported files alone', () => {
+    expect(sourceKind('Makefile')).toBe(null)
+    expect(isSupportedFile('README.md')).toBe(false)
+    expect(sourceKind('style.css')).toBe(null)
+  })
+})
+
+describe('rubyTokens', () => {
+  it('normalizes a fragment the way a .rb file would', () => {
+    expect(rubyTokens('org.name')).toEqual(rubyTokens('company.title'))
+  })
+
+  it('keeps different shapes apart', () => {
+    expect(rubyTokens('a.b')).not.toEqual(rubyTokens('a.b.c'))
+  })
+
+  it('returns [] for whitespace', () => {
+    expect(rubyTokens('   ')).toEqual([])
+  })
+
+  it('returns [] when the source causes a parse exception', () => {
+    expect(rubyTokens(null as unknown as string)).toEqual([])
   })
 })

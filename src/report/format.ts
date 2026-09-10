@@ -18,6 +18,8 @@ export interface DisplayGroup {
 export interface FormatOptions {
   showCode?: boolean
   repoRoot?: string
+  // Groups larger than this are idiom, not accident — see `presentableGroups`.
+  maxGroupSize?: number
 }
 
 // ── clone type classification ──────────────────────────────────────────────

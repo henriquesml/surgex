@@ -23,7 +23,29 @@ Two commands:
 
 Source files are parsed with [tree-sitter](https://tree-sitter.github.io/tree-sitter/), a fast incremental parser that produces a concrete syntax tree. Supported languages: **TypeScript**, **TSX**, **Ruby**.
 
-The parser walks the AST and extracts _code units_: `function_declaration`, `method_definition`, `arrow_function` (when assigned to a `const`), and `class` nodes.
+Ruby is not only `.rb`: `.rake`, `.gemspec`, `.ru`, `.jbuilder` and `Rakefile` are read as Ruby too.
+
+**ERB templates** (`.erb`, including `.html.erb`, `.turbo_stream.erb` and mailer views) are parsed by [Herb](https://herb-tools.dev), an HTML-aware ERB parser. tree-sitter's ERB grammar only delimits `<% %>` and leaves the HTML as opaque text, which is close to useless for structural comparison; Herb produces a real tree of HTML elements and ERB nodes.
+
+A template contributes two kinds of unit: the **whole file**, because "these two partials are the same, extract one" is the finding a Rails codebase acts on, and each **ERB block**, so a repeated `each` body inside one long template is still visible.
+
+Template normalization keeps what is structure and collapses what is not:
+
+| Kept | Collapsed |
+| --- | --- |
+| Tag names, attribute names, nesting | Text content → `TEXT` |
+| ERB control flow (`ERB` … `ERB_END`) | Attribute values → `STR` |
+| | `class` lists → `STR` |
+
+Class lists are collapsed because in a utility-CSS codebase they are the noisiest attribute there is: kept, two cards that differ only in padding never match. Ruby inside `<%= %>` runs through the *Ruby* normalizer, so `<%= org.name %>` and `<%= company.title %>` collapse to the same shape — Herb and the existing normalizer compose.
+
+The parser walks the AST and extracts _code units_.
+
+In TypeScript: `function_declaration`, `method_definition`, `arrow_function` (when assigned to a `const`), and `class` nodes.
+
+In Ruby: `method`, `class` and `module` nodes, plus **DSL blocks** — `test "..." do`, `included do`, `namespace :x do`. Rails and the test frameworks put real, duplicable bodies in blocks rather than in `def`s, so a codebase written that way is otherwise invisible. A block is named by its first string or symbol argument, falling back to the method it is passed to. Blocks *inside* a method body are skipped: there they are implementation detail the method unit already covers.
+
+A class or module whose body holds nothing but nested definitions — `module RuboCop; module Cop; class Foo` — is a **namespace shell** and is not a unit. Emitting it would make every namespace read as a clone of every other, and would report the real finding under a name nobody searches for.
 
 ### 2. Normalization — Type-2 clone detection
 
@@ -171,7 +193,9 @@ surgex index --force                  # re-parse everything, ignoring the cache
 surgex index --kgram=7 --window=5     # tune Winnowing parameters
 ```
 
-Ignored automatically: `node_modules`, `dist`, `tmp`, `vendor`, `coverage`, `.git`, `spec/fixtures`.
+Inside a git repository the file list comes from **git** — tracked files plus untracked ones that are not ignored. `.gitignore` is therefore honoured for free, which is what makes dot-directories safe to read: real code under `.rubocop/cop/custom/` is indexed, while an ignored `.claude/` holding gigabytes of runtime state is not. Outside a repository the walk falls back to a glob.
+
+Ignored on top of that: `node_modules`, `dist`, `tmp`, `vendor`, `coverage`, `spec/fixtures`, and dot-directories holding dependencies or build output (`.cache`, `.bundle`, `.venv`, `.next`, `.yarn`).
 
 ---
 
@@ -199,7 +223,11 @@ Options:
 | `--min-tokens=N` | `20` | Ignore units with fewer normalized tokens |
 | `--show-code` | — | Show structural matches side by side |
 | `--json` | — | Machine-readable JSON output |
+| `--format=<fmt>` | `text` | `text`, `json`, or `github` (annotations) |
+| `--exclude=<glob>` | — | Skip paths; repeatable, adds to `surgex.json` |
+| `--max-group-size=N` | — | Ignore groups larger than N (idiom, not accident) |
 | `--fail-on-found` | — | Exit with code 1 if clones are found (CI gate) |
+| `--fail-on=<types>` | — | Exit 1 only for these clone types, e.g. `type1,type2` |
 
 `check` also detects clones _within the checked files themselves_ — two
 identical new files added in the same branch are reported even though neither
@@ -208,8 +236,15 @@ is in the index yet.
 Using as a CI gate:
 
 ```bash
-surgex check --from=origin/main --fail-on-found --json > clones.json
+# Annotate every finding on the diff, but only block on exact copies.
+surgex check --from=origin/main --format=github --fail-on=type1,type2
 ```
+
+`--format=github` writes GitHub Actions workflow commands to stdout, which the
+runner turns into annotations pinned to the lines of the pull request diff. It
+needs no token and no bot account. `--fail-on` decides separately what blocks:
+a Type-1 copy is indefensible, while a Type-3 near-match is usually worth a
+comment rather than a red check.
 
 Both commands show progress in real time:
 
@@ -220,6 +255,37 @@ Checking 127 file(s) [all indexed files]
 
 ---
 
+## Configuration
+
+An optional `surgex.json` at the project root sets the defaults for both commands.
+
+```json
+{
+  "presets": ["rails", "tests"],
+  "exclude": ["engines/ui/app/components/**"],
+  "threshold": 0.8,
+  "minTokens": { "ruby": 35, "typescript": 20 },
+  "maxGroupSize": 6
+}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `presets` | Named exclusion sets (below) |
+| `exclude` | Extra globs, matched against project-root relative paths |
+| `threshold` | Default for `--threshold` |
+| `minTokens` | Default for `--min-tokens`: one number, or a floor per language (`{ "ruby": 35 }`) |
+| `maxGroupSize` | Default for `--max-group-size`; off when unset |
+
+Command-line flags override `threshold` and `minTokens`; `--exclude` adds to the list rather than replacing it.
+
+**Presets**
+
+- `rails` — paths the framework owns and regenerates: `db/migrate`, `db/*_schema.rb`, `db/seeds.rb`, `config/environments`, `config/application.rb`, `config/boot.rb`, `config/environment.rb`, `config/puma.rb`, `bin/`. Every app has them, they are identical by construction, and nobody can act on a report that says so.
+- `tests` — `test/` and `spec/` directories and `*_test.rb` / `*_spec.rb` / `*.test.ts` files. Kept separate from `rails` on purpose: duplication between test cases is often deliberate — table-driven tests repeat a shape by design — so whether it counts as noise is a project's call, not a default.
+
+Excluded files never enter the index, so excluding a large generated tree makes indexing faster as well as quieter.
+
 ## Clone types
 
 | Type   | Condition                               | Description                                     |
@@ -229,6 +295,8 @@ Checking 127 file(s) [all indexed files]
 | Type-3 | similarity < 100%                       | Similar structure with insertions or removals   |
 
 Results are grouped by type so the most actionable duplicates appear first.
+
+Two groups are never reported: units fully contained in another unit of the same group (a cloned class and each of its methods — the class alone tells the story), and **sibling DSL blocks within a single file**. A table-driven test repeats a shape by design; saying so is not a finding. The same block duplicated *across* files is a different claim, and is reported.
 
 ---
 

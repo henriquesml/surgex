@@ -91,7 +91,9 @@ describe('surgex CLI', () => {
       expect(fs.existsSync(path.join(repo, '.surgex/index.json'))).toBe(true)
       expect(fs.existsSync(path.join(nested, '.surgex'))).toBe(false)
 
-      const indexData = JSON.parse(fs.readFileSync(path.join(repo, '.surgex/index.json'), 'utf8')) as {
+      const indexData = JSON.parse(
+        fs.readFileSync(path.join(repo, '.surgex/index.json'), 'utf8'),
+      ) as {
         files: Record<string, unknown>
         units: Array<{ file: string; name: string }>
       }
