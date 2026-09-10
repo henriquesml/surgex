@@ -14,9 +14,11 @@ export interface ReportOptions extends FormatOptions {
 
 const PLURAL_TYPE: Record<CodeUnit['type'], string> = {
   arrow: 'arrows',
+  block: 'blocks',
   class: 'classes',
   function: 'functions',
   method: 'methods',
+  module: 'modules',
 }
 
 // Drops units that are fully contained in another unit of the same group
