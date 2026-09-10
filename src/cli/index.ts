@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 import * as path from 'path'
 import * as fs from 'fs'
-import { glob } from 'glob'
-import { indexPaths, FILE_PATTERNS, IGNORE } from '../pipeline/indexer'
+import { minimatch } from 'minimatch'
+import { indexPaths, collectFiles } from '../pipeline/indexer'
 import { checkFiles } from '../pipeline/checker'
+import { isSupportedFile } from '../lang/parser'
 import { detectClones } from '../core/detector'
 import { groupClones } from '../core/grouping'
 import { DEFAULT_PARAMS } from '../core/fingerprint'
 import { formatReport, formatCheckReport, countFindings } from '../report/report'
 import { getChangedFiles, findRepoRoot } from '../io/git'
 import { Store } from '../io/store'
+import { loadConfig, resolveExcludes } from '../io/config'
 import { UsageError } from '../errors'
 import { HELP } from './help'
 
@@ -30,6 +32,11 @@ function parseNumberFlag(
   return value
 }
 
+// Repeatable flag: `--exclude=a/** --exclude=b/**` collects both.
+function parseRepeatedFlag(args: string[], prefix: string): string[] {
+  return args.filter(arg => arg.startsWith(prefix)).map(arg => arg.slice(prefix.length))
+}
+
 function parseStringFlag(args: string[], prefix: string): string {
   const match = args.find(arg => arg.startsWith(prefix))
   return match ? match.slice(prefix.length) : ''
@@ -48,6 +55,12 @@ const progress = (current: number, total: number, label: string) => {
 
 const clearProgress = () => process.stderr.write('\x1b[2K\r')
 
+// Changed files come from git as repo-relative paths, so the config's globs
+// apply directly — no need to route them back through collectFiles.
+function isExcluded(repoRelativePath: string, patterns: string[]): boolean {
+  return patterns.some(pattern => minimatch(repoRelativePath, pattern, { dot: true }))
+}
+
 function requireIndex(store: Store): void {
   if (!store.exists()) {
     throw new UsageError('No index found — run `surgex index` first.')
@@ -62,12 +75,14 @@ async function runIndex(args: string[]): Promise<void> {
   const windowSize = parseNumberFlag(args, '--window=', DEFAULT_PARAMS.w, { min: 1, max: 50 })
   const store = Store.discover()
   const paths = targetPaths.length ? targetPaths : [process.cwd()]
+  const exclude = resolveExcludes(loadConfig(store.root), parseRepeatedFlag(args, '--exclude='))
 
   console.log(`Indexing: ${paths.join(', ')}`)
   const stats = await indexPaths(paths, store, {
     verbose,
     params: { k: kGramSize, w: windowSize },
     force,
+    exclude,
   })
   const cacheNote = stats.reused > 0 ? `, ${stats.reused} unchanged from cache` : ''
   console.log(
@@ -80,10 +95,19 @@ async function runCheck(args: string[]): Promise<void> {
   const store = Store.discover()
   requireIndex(store)
 
+  const config = loadConfig(store.root)
+  const exclude = resolveExcludes(config, parseRepeatedFlag(args, '--exclude='))
+
   const all = args.includes('--all')
   const from = parseStringFlag(args, '--from=')
-  const threshold = parseNumberFlag(args, '--threshold=', 0.75, { min: 0, max: 1 })
-  const minTokens = parseNumberFlag(args, '--min-tokens=', 20, { min: 0, max: 100_000 })
+  const threshold = parseNumberFlag(args, '--threshold=', config.threshold ?? 0.75, {
+    min: 0,
+    max: 1,
+  })
+  const minTokens = parseNumberFlag(args, '--min-tokens=', config.minTokens ?? 20, {
+    min: 0,
+    max: 100_000,
+  })
   const showCode = args.includes('--show-code')
   const json = args.includes('--json')
   const failOnFound = args.includes('--fail-on-found')
@@ -115,11 +139,7 @@ async function runCheck(args: string[]): Promise<void> {
     for (const arg of explicitFiles) {
       const absolutePath = path.resolve(arg)
       if (fs.statSync(absolutePath, { throwIfNoEntry: false })?.isDirectory()) {
-        const files = await glob(FILE_PATTERNS, {
-          cwd: absolutePath,
-          absolute: true,
-          ignore: IGNORE,
-        })
+        const files = await collectFiles(absolutePath, { exclude })
         for (const file of files) {
           expandedFiles.push({
             absolutePath: file,
@@ -138,7 +158,9 @@ async function runCheck(args: string[]): Promise<void> {
   } else {
     const gitContext = getChangedFiles(process.cwd(), from || undefined)
     repoRoot = gitContext.repoRoot
-    relevant = gitContext.changedFiles.filter(file => /\.(ts|tsx|rb)$/.test(file.absolutePath))
+    relevant = gitContext.changedFiles.filter(
+      file => isSupportedFile(file.absolutePath) && !isExcluded(file.repoRelativePath, exclude),
+    )
     label = from ? `branch diff vs ${from}` : 'uncommitted changes'
   }
 
